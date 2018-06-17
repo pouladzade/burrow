@@ -146,12 +146,14 @@ func Configure(output Output) func(cmd *cli.Cmd) {
 
 						// Is this is a validator node key?
 						nodeKey := false
-						for _, a := range conf.GenesisDoc.Validators {
+						/* WHY?????
+						for _, a := range conf.GenesisDoc.Validators() {
 							if a.NodeAddress != nil && addr == *a.NodeAddress {
 								nodeKey = true
 								break
 							}
 						}
+						*/
 
 						if nodeKey {
 							privKey := tm_crypto.GenPrivKeyEd25519()
@@ -203,15 +205,16 @@ func Configure(output Output) func(cmd *cli.Cmd) {
 			if conf.GenesisDoc != nil {
 				pkg.Config = conf.GenesisDoc
 
-				for _, v := range conf.GenesisDoc.Validators {
+				for _, v := range conf.GenesisDoc.Validators() {
 					tmplV := deployment.Validator{
-						Name:    v.Name,
-						Address: v.Address,
+						Address: v.Address(),
 					}
 
-					if v.NodeAddress != nil {
-						tmplV.NodeAddress = *v.NodeAddress
-					}
+					/*
+						if v.NodeAddress != nil {
+							tmplV.NodeAddress = *v.NodeAddress
+						}
+					*/
 
 					pkg.Validators = append(pkg.Validators, tmplV)
 				}

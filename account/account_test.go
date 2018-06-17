@@ -15,13 +15,12 @@
 package account
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 
-	"encoding/json"
-
-	"fmt"
-
 	"github.com/hyperledger/burrow/crypto"
+	"github.com/hyperledger/burrow/permission"
 	ptypes "github.com/hyperledger/burrow/permission/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,35 +47,22 @@ func TestAddress(t *testing.T) {
 	assert.Equal(t, addr, addrFromWord256)
 }
 
-func TestDecodeConcrete(t *testing.T) {
-	concreteAcc := NewConcreteAccountFromSecret("Super Semi Secret")
-	concreteAcc.Permissions = ptypes.AccountPermissions{
+func TestDecode(t *testing.T) {
+	permissions := ptypes.AccountPermissions{
 		Base: ptypes.BasePermissions{
 			Perms:  ptypes.SetGlobal,
 			SetBit: ptypes.SetGlobal,
 		},
 		Roles: []string{"bums"},
 	}
-	acc := concreteAcc.Account()
-	encodedAcc, err := acc.Encode()
-	require.NoError(t, err)
+	acc := NewAccountFromSecret("Super Semi Secret", permissions)
+	acc.AddToBalance(100)
 
-	concreteAccOut, err := DecodeConcrete(encodedAcc)
-	require.NoError(t, err)
-
-	assert.Equal(t, concreteAcc, *concreteAccOut)
-	concreteAccOut, err = DecodeConcrete([]byte("flungepliffery munknut tolopops"))
-	assert.Error(t, err)
-}
-
-func TestDecode(t *testing.T) {
-	concreteAcc := NewConcreteAccountFromSecret("Super Semi Secret")
-	acc := concreteAcc.Account()
 	encodedAcc, err := acc.Encode()
 	require.NoError(t, err)
 	accOut, err := Decode(encodedAcc)
 	require.NoError(t, err)
-	assert.Equal(t, concreteAcc, *AsConcreteAccount(accOut))
+	assert.Equal(t, acc, accOut)
 
 	accOut, err = Decode([]byte("flungepliffery munknut tolopops"))
 	require.Error(t, err)
@@ -84,15 +70,16 @@ func TestDecode(t *testing.T) {
 }
 
 func TestMarshalJSON(t *testing.T) {
-	concreteAcc := NewConcreteAccountFromSecret("Super Semi Secret")
-	concreteAcc.Code = []byte{60, 23, 45}
-	acc := concreteAcc.Account()
+	acc := NewContractAccountFromSecret("Super Semi Secret", permission.ZeroAccountPermissions)
+	acc.AddToBalance(100)
+	acc.SetCode([]byte{60, 23, 45})
+
 	bs, err := json.Marshal(acc)
 
-	expected := fmt.Sprintf(`{"Address":"%s","PublicKey":{"CurveType":"ed25519","PublicKey":"%s"},`+
-		`"Sequence":0,"Balance":0,"Code":"3C172D","StorageRoot":null,`+
-		`"Permissions":{"Base":{"Perms":0,"SetBit":0},"Roles":null}}`,
-		concreteAcc.Address, concreteAcc.PublicKey)
+	expected := fmt.Sprintf(`{"Address":"%s","PublicKey":{"CurveType":"secp256k1","PublicKey":"%s"},`+
+		`"Sequence":0,"Balance":100,"Code":"3C172D","StorageRoot":null,`+
+		`"Permissions":{"Base":{"Perms":0,"SetBit":0},"Roles":[]}}`,
+		acc.Address(), acc.PublicKey())
 	assert.Equal(t, expected, string(bs))
 	assert.NoError(t, err)
 }

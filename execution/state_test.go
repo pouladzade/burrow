@@ -27,7 +27,7 @@ import (
 	"github.com/hyperledger/burrow/execution/events"
 	"github.com/hyperledger/burrow/execution/events/pbevents"
 	"github.com/hyperledger/burrow/execution/evm/sha3"
-	permission "github.com/hyperledger/burrow/permission/types"
+	ptypes "github.com/hyperledger/burrow/permission/types"
 	"github.com/hyperledger/burrow/txs"
 	"github.com/hyperledger/burrow/txs/payload"
 	"github.com/stretchr/testify/assert"
@@ -37,12 +37,18 @@ import (
 
 func TestState_UpdateAccount(t *testing.T) {
 	s := NewState(db.NewMemDB())
-	account := acm.NewConcreteAccountFromSecret("Foo").MutableAccount()
-	account.MutablePermissions().Base.Perms = permission.SetGlobal | permission.HasRole
+
+	perm := ptypes.AccountPermissions{
+		Base: ptypes.BasePermissions{
+			Perms: ptypes.SetGlobal | ptypes.HasRole,
+		},
+	}
+	account := acm.NewAccountFromSecret("Foo", perm)
+	account.AddToBalance(100)
+
 	_, err := s.Update(func(ws Updatable) error {
 		return ws.UpdateAccount(account)
 	})
-	require.NoError(t, err)
 
 	require.NoError(t, err)
 	accountOut, err := s.GetAccount(account.Address())

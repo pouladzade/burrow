@@ -22,6 +22,8 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/hyperledger/burrow/permission"
+
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/account/state"
 	"github.com/hyperledger/burrow/binary"
@@ -72,23 +74,23 @@ func NewTransactor(tip *blockchain.Tip, eventEmitter event.Emitter,
 
 // Run a contract's code on an isolated and unpersisted state
 // Cannot be used to create new contracts
-func (trans *Transactor) Call(reader state.Reader, fromAddress, address crypto.Address,
+func (trans *Transactor) Call(reader state.Reader, fromAddress, toAddress crypto.Address,
 	data []byte) (call *Call, err error) {
 
-	if evm.IsRegisteredNativeContract(address.Word256()) {
+	if evm.IsRegisteredNativeContract(toAddress.Word256()) {
 		return nil, fmt.Errorf("attempt to call native contract at address "+
 			"%X, but native contracts can not be called directly. Use a deployed "+
-			"contract that calls the native function instead", address)
+			"contract that calls the native function instead", toAddress)
 	}
 	// This was being run against CheckTx cache, need to understand the reasoning
-	callee, err := state.GetMutableAccount(reader, address)
+	callee, err := state.GetAccount(reader, toAddress)
 	if err != nil {
 		return nil, err
 	}
 	if callee == nil {
-		return nil, fmt.Errorf("account %s does not exist", address)
+		return nil, fmt.Errorf("account %s does not exist", toAddress)
 	}
-	caller := acm.ConcreteAccount{Address: fromAddress}.MutableAccount()
+	caller := acm.NewContractAccount(fromAddress, permission.ZeroAccountPermissions)
 	txCache := state.NewCache(reader)
 	params := vmParams(trans.tip)
 
@@ -113,8 +115,8 @@ func (trans *Transactor) Call(reader state.Reader, fromAddress, address crypto.A
 // Cannot be used to create new contracts.
 func (trans *Transactor) CallCode(reader state.Reader, fromAddress crypto.Address, code, data []byte) (*Call, error) {
 	// This was being run against CheckTx cache, need to understand the reasoning
-	callee := acm.ConcreteAccount{Address: fromAddress}.MutableAccount()
-	caller := acm.ConcreteAccount{Address: fromAddress}.MutableAccount()
+	callee := acm.NewContractAccount(fromAddress, permission.ZeroAccountPermissions)
+	caller := acm.NewContractAccount(fromAddress, permission.ZeroAccountPermissions)
 	txCache := state.NewCache(reader)
 	params := vmParams(trans.tip)
 

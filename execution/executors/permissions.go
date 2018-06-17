@@ -31,7 +31,7 @@ func (ctx *PermissionsContext) Execute(txEnv *txs.Envelope) error {
 		return fmt.Errorf("payload must be PermissionsTx, but is: %v", txEnv.Tx.Payload)
 	}
 	// Validate input
-	inAcc, err := state.GetMutableAccount(ctx.StateWriter, ctx.tx.Input.Address)
+	inAcc, err := state.GetAccount(ctx.StateWriter, ctx.tx.Input.Address)
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func (ctx *PermissionsContext) Execute(txEnv *txs.Envelope) error {
 	ctx.Logger.TraceMsg("New PermissionsTx",
 		"perm_args", ctx.tx.PermArgs.String())
 
-	var permAcc acm.Account
+	var permAcc *acm.Account
 	switch ctx.tx.PermArgs.PermFlag {
 	case ptypes.HasBase:
 		// this one doesn't make sense from txs
@@ -122,7 +122,7 @@ func (ctx *PermissionsContext) Execute(txEnv *txs.Envelope) error {
 		"old_sequence", inAcc.Sequence(),
 		"new_sequence", inAcc.Sequence()+1)
 	inAcc.IncSequence()
-	inAcc, err = inAcc.SubtractFromBalance(value)
+	err = inAcc.SubtractFromBalance(value)
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func (ctx *PermissionsContext) Execute(txEnv *txs.Envelope) error {
 }
 
 func mutatePermissions(stateReader state.Reader, address crypto.Address,
-	mutator func(*ptypes.AccountPermissions) error) (acm.Account, error) {
+	mutator func(*ptypes.AccountPermissions) error) (*acm.Account, error) {
 
 	account, err := stateReader.GetAccount(address)
 	if err != nil {
@@ -149,7 +149,6 @@ func mutatePermissions(stateReader state.Reader, address crypto.Address,
 	if account == nil {
 		return nil, fmt.Errorf("could not get account at address %s in order to alter permissions", address)
 	}
-	mutableAccount := acm.AsMutableAccount(account)
 
-	return mutableAccount, mutator(mutableAccount.MutablePermissions())
+	return account, mutator(account.MutablePermissions())
 }

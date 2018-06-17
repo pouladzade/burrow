@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	acm "github.com/hyperledger/burrow/account"
+	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/genesis"
 	"github.com/hyperledger/burrow/keys"
 	"github.com/hyperledger/burrow/permission"
@@ -42,27 +44,24 @@ func (gs *GenesisSpec) RealiseKeys(keyClient keys.KeyClient) error {
 
 // Produce a fully realised GenesisDoc from a template GenesisDoc that may omit values
 func (gs *GenesisSpec) GenesisDoc(keyClient keys.KeyClient, generateNodeKeys bool) (*genesis.GenesisDoc, error) {
-	genesisDoc := new(genesis.GenesisDoc)
-	if gs.GenesisTime == nil {
-		genesisDoc.GenesisTime = time.Now()
-	} else {
-		genesisDoc.GenesisTime = *gs.GenesisTime
+
+	genesisTime := time.Now()
+	if gs.GenesisTime != nil {
+		genesisTime = *gs.GenesisTime
 	}
 
-	if gs.ChainName == "" {
-		genesisDoc.ChainName = fmt.Sprintf("BurrowChain_%X", gs.ShortHash())
-	} else {
-		genesisDoc.ChainName = gs.ChainName
+	chainName := fmt.Sprintf("BurrowChain_%X", gs.ShortHash())
+	if gs.ChainName != "" {
+		chainName = gs.ChainName
 	}
 
-	if len(gs.GlobalPermissions) == 0 {
-		genesisDoc.GlobalPermissions = permission.DefaultAccountPermissions.Clone()
-	} else {
+	globalPermissions := permission.DefaultAccountPermissions.Clone()
+	if len(gs.GlobalPermissions) > 0 {
 		basePerms, err := permission.BasePermissionsFromStringList(gs.GlobalPermissions)
 		if err != nil {
 			return nil, err
 		}
-		genesisDoc.GlobalPermissions = ptypes.AccountPermissions{
+		globalPermissions = ptypes.AccountPermissions{
 			Base: basePerms,
 		}
 	}
@@ -75,24 +74,30 @@ func (gs *GenesisSpec) GenesisDoc(keyClient keys.KeyClient, generateNodeKeys boo
 		})
 	}
 
-	for i, templateAccount := range templateAccounts {
-		account, err := templateAccount.Account(keyClient, i)
+	var names map[crypto.Address]string
+	var accounts []*acm.Account
+	var validators []acm.Validator
+
+	for _, templateAccount := range templateAccounts {
+		account, err := templateAccount.Account(keyClient)
 		if err != nil {
 			return nil, fmt.Errorf("could not create Account from template: %v", err)
 		}
-		genesisDoc.Accounts = append(genesisDoc.Accounts, *account)
+		accounts = append(accounts, account)
 		// Create a corresponding validator
 		if templateAccount.Power != nil {
 			// Note this does not modify the input template
-			templateAccount.Address = &account.Address
-			validator, err := templateAccount.Validator(keyClient, i, generateNodeKeys)
+			address := account.Address()
+			templateAccount.Address = &address
+			validator, err := templateAccount.Validator(keyClient, generateNodeKeys)
 			if err != nil {
 				return nil, fmt.Errorf("could not create Validator from template: %v", err)
 			}
-			genesisDoc.Validators = append(genesisDoc.Validators, *validator)
+			validators = append(validators, validator)
 		}
 	}
 
+	genesisDoc := genesis.MakeGenesisDoc(chainName, nil, genesisTime, globalPermissions, names, accounts, validators)
 	return genesisDoc, nil
 }
 

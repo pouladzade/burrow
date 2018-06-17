@@ -211,7 +211,7 @@ func (exe *executor) Reset() error {
 // to always access the freshest mempool state as needed by accounts.SequentialSigningAccount
 //
 // Accounts
-func (exe *executor) GetAccount(address crypto.Address) (acm.Account, error) {
+func (exe *executor) GetAccount(address crypto.Address) (*acm.Account, error) {
 	exe.RLock()
 	defer exe.RUnlock()
 	return exe.stateCache.GetAccount(address)

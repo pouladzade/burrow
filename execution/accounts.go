@@ -8,6 +8,7 @@ import (
 	"github.com/hyperledger/burrow/account/state"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/keys"
+	"github.com/hyperledger/burrow/permission"
 	burrow_sync "github.com/hyperledger/burrow/sync"
 )
 
@@ -20,7 +21,7 @@ type Accounts struct {
 }
 
 type SigningAccount struct {
-	acm.Account
+	*acm.Account
 	crypto.Signer
 }
 
@@ -38,21 +39,19 @@ func NewAccounts(reader state.Reader, keyClient keys.KeyClient, mutexCount int) 
 	}
 }
 func (accs *Accounts) SigningAccount(address crypto.Address, signer crypto.Signer) (*SigningAccount, error) {
-	account, err := state.GetMutableAccount(accs, address)
+	account, err := state.GetAccount(accs, address)
 	if err != nil {
 		return nil, err
 	}
 	// If the account is unknown to us return a zeroed account
 	if account == nil {
-		account = acm.ConcreteAccount{
-			Address: address,
-		}.MutableAccount()
+		pubKey, err := accs.keyClient.PublicKey(address)
+		if err != nil {
+			return nil, err
+		}
+		account = acm.NewAccount(pubKey, permission.ZeroAccountPermissions)
 	}
-	pubKey, err := accs.keyClient.PublicKey(address)
-	if err != nil {
-		return nil, err
-	}
-	account.SetPublicKey(pubKey)
+
 	return &SigningAccount{
 		Account: account,
 		Signer:  signer,

@@ -7,11 +7,15 @@ import (
 	"testing"
 	"time"
 
+	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/consensus/tendermint"
 	"github.com/hyperledger/burrow/consensus/tendermint/validator"
+	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/genesis"
 	"github.com/hyperledger/burrow/keys"
 	"github.com/hyperledger/burrow/logging"
+	"github.com/hyperledger/burrow/logging/lifecycle"
+	"github.com/hyperledger/burrow/permission"
 	"github.com/hyperledger/burrow/rpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,10 +30,10 @@ func TestBootThenShutdown(t *testing.T) {
 	os.MkdirAll(testDir, 0777)
 	os.Chdir(testDir)
 	tmConf := tmConfig.DefaultConfig()
-	//logger, _, _ := lifecycle.NewStdErrLogger()
-	logger := logging.NewNoopLogger()
-	genesisDoc, _, privateValidators := genesis.NewDeterministicGenesis(123).GenesisDoc(1, true, 1000, 1, true, 1000)
-	privValidator := validator.NewPrivValidatorMemory(privateValidators[0], privateValidators[0])
+	logger, _ := lifecycle.NewStdErrLogger()
+	//logger := logging.NewNoopLogger()
+	genesisDoc, privAccount := deterministicGenesisDoc()
+	privValidator := validator.NewPrivValidatorMemory(privAccount, privAccount)
 	assert.NoError(t, bootWaitBlocksShutdown(privValidator, genesisDoc, tmConf, logger, nil))
 }
 
@@ -38,10 +42,11 @@ func TestBootShutdownResume(t *testing.T) {
 	os.MkdirAll(testDir, 0777)
 	os.Chdir(testDir)
 	tmConf := tmConfig.DefaultConfig()
-	//logger, _, _ := lifecycle.NewStdErrLogger()
-	logger := logging.NewNoopLogger()
-	genesisDoc, _, privateValidators := genesis.NewDeterministicGenesis(123).GenesisDoc(1, true, 1000, 1, true, 1000)
-	privValidator := validator.NewPrivValidatorMemory(privateValidators[0], privateValidators[0])
+	logger, _ := lifecycle.NewStdErrLogger()
+	//logger := logging.NewNoopLogger()
+
+	genesisDoc, privAccount := deterministicGenesisDoc()
+	privValidator := validator.NewPrivValidatorMemory(privAccount, privAccount)
 
 	i := int64(0)
 	// asserts we get a consecutive run of blocks
@@ -58,6 +63,18 @@ func TestBootShutdownResume(t *testing.T) {
 	// Resuming with mismatched genesis should fail
 	genesisDoc.Salt = []byte("foo")
 	assert.Error(t, bootWaitBlocksShutdown(privValidator, genesisDoc, tmConf, logger, blockChecker))
+}
+
+func deterministicGenesisDoc() (*genesis.GenesisDoc, acm.PrivateAccount) {
+	names := map[crypto.Address]string{}
+	privAccount := acm.GeneratePrivateAccountFromSecret("test-account")
+	account := acm.NewAccount(privAccount.PublicKey(), permission.DefaultAccountPermissions)
+	account.AddToBalance(1000)
+	accounts := []*acm.Account{account}
+	validators := []acm.Validator{acm.AsValidator(account)}
+	genesisDoc := genesis.MakeGenesisDoc("tm-chanin", nil, time.Now(), permission.ZeroAccountPermissions, names, accounts, validators)
+
+	return genesisDoc, privAccount
 }
 
 func bootWaitBlocksShutdown(privValidator tmTypes.PrivValidator, genesisDoc *genesis.GenesisDoc,

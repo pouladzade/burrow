@@ -64,7 +64,7 @@ func (rc *ResultCall) UnmarshalJSON(data []byte) (err error) {
 
 type ResultListAccounts struct {
 	BlockHeight uint64
-	Accounts    []*acm.ConcreteAccount
+	Accounts    []*acm.Account
 }
 
 type ResultDumpStorage struct {
@@ -179,7 +179,7 @@ type ResultGeneratePrivateAccount struct {
 }
 
 type ResultGetAccount struct {
-	Account *acm.ConcreteAccount
+	Account *acm.Account
 }
 
 type AccountHumanReadable struct {

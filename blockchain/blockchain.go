@@ -108,8 +108,8 @@ func newBlockchain(db dbm.DB, genesisDoc *genesis.GenesisDoc) *Blockchain {
 		Root: NewRoot(genesisDoc),
 		Tip:  NewTip(genesisDoc.ChainID(), NewRoot(genesisDoc).genesisDoc.GenesisTime, NewRoot(genesisDoc).genesisHash),
 	}
-	for _, gv := range genesisDoc.Validators {
-		bc.validators.AlterPower(gv.PublicKey, gv.Amount)
+	for _, gv := range genesisDoc.Validators() {
+		bc.validators.AlterPower(gv.PublicKey(), gv.Power())
 	}
 	return bc
 }

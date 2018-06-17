@@ -15,6 +15,7 @@
 package genesis
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -35,36 +36,30 @@ const ShortHashSuffixBytes = 3
 //------------------------------------------------------------
 // core types for a genesis definition
 
-type BasicAccount struct {
-	// Address  is convenient to have in file for reference, but otherwise ignored since derived from PublicKey
-	Address   crypto.Address
-	PublicKey crypto.PublicKey
-	Amount    uint64
-}
-
-type Account struct {
-	BasicAccount
+type genAccount struct {
+	Address     crypto.Address
+	PublicKey   crypto.PublicKey
+	Amount      uint64
 	Name        string
 	Permissions ptypes.AccountPermissions
 }
 
-type Validator struct {
-	BasicAccount
-	NodeAddress *crypto.Address `json:",omitempty" toml:",omitempty"`
-	Name        string
-	UnbondTo    []BasicAccount
+type genValidator struct {
+	Address   crypto.Address
+	PublicKey crypto.PublicKey
+	Stake     uint64
 }
 
 //------------------------------------------------------------
 // GenesisDoc is stored in the state database
-
 type GenesisDoc struct {
 	GenesisTime       time.Time
 	ChainName         string
 	Salt              []byte `json:",omitempty" toml:",omitempty"`
 	GlobalPermissions ptypes.AccountPermissions
-	Accounts          []Account
-	Validators        []Validator
+	MaximumPower      int
+	GenAccounts       []genAccount   `json:"Accounts" toml:"Accounts"`
+	GenValidators     []genValidator `json:"Validators" toml:"Validators"`
 }
 
 // JSONBytes returns the JSON (not-yet) canonical bytes for a given
@@ -92,6 +87,51 @@ func (genesisDoc *GenesisDoc) ChainID() string {
 	return fmt.Sprintf("%s-%X", genesisDoc.ChainName, genesisDoc.ShortHash())
 }
 
+func (genesisDoc *GenesisDoc) Accounts() []*acm.Account {
+	accounts := make([]*acm.Account, 0, len(genesisDoc.GenAccounts))
+	for _, genAccount := range genesisDoc.GenAccounts {
+		account := acm.NewAccount(genAccount.PublicKey, genAccount.Permissions)
+		account.AddToBalance(genAccount.Amount)
+
+		accounts = append(accounts, account)
+	}
+
+	return accounts
+}
+
+func (genesisDoc *GenesisDoc) names() map[crypto.Address]string {
+	names := make(map[crypto.Address]string)
+	for _, genAccount := range genesisDoc.GenAccounts {
+		if genAccount.Name != "" {
+			names[genAccount.Address] = genAccount.Name
+		}
+	}
+
+	return names
+}
+
+func (genesisDoc *GenesisDoc) Validators() []acm.Validator {
+	validators := make([]acm.Validator, 0, len(genesisDoc.GenValidators))
+	for _, genValidator := range genesisDoc.GenValidators {
+		account := acm.NewAccount(genValidator.PublicKey, permission.ZeroAccountPermissions)
+		account.AddToBalance(genValidator.Stake)
+
+		validator := acm.AsValidator(account)
+
+		validators = append(validators, validator)
+	}
+
+	return validators
+}
+
+func (genesisDoc *GenesisDoc) GetMaximumPower() int {
+	if genesisDoc.MaximumPower < len(genesisDoc.GenValidators) {
+		return len(genesisDoc.GenValidators)
+	}
+
+	return genesisDoc.MaximumPower
+}
+
 //------------------------------------------------------------
 // Make genesis state from file
 
@@ -107,121 +147,63 @@ func GenesisDocFromJSON(jsonBlob []byte) (*GenesisDoc, error) {
 //------------------------------------------------------------
 // Account methods
 
-func GenesisAccountFromAccount(name string, account acm.Account) Account {
-	return Account{
-		Name:        name,
+func makeGenesisAccount(account *acm.Account) genAccount {
+	return genAccount{
+		PublicKey:   account.PublicKey(),
+		Address:     account.Address(),
+		Amount:      account.Balance(),
 		Permissions: account.Permissions(),
-		BasicAccount: BasicAccount{
-			Address: account.Address(),
-			Amount:  account.Balance(),
-		},
 	}
 }
 
-// Clone clones the genesis account
-func (genesisAccount *Account) Clone() Account {
-	// clone the account permissions
-	return Account{
-		BasicAccount: BasicAccount{
-			Address: genesisAccount.Address,
-			Amount:  genesisAccount.Amount,
-		},
-		Name:        genesisAccount.Name,
-		Permissions: genesisAccount.Permissions.Clone(),
+func makeGenesisValidator(validator acm.Validator) genValidator {
+	return genValidator{
+		PublicKey: validator.PublicKey(),
+		Address:   validator.Address(),
+		Stake:     validator.Power(),
 	}
 }
 
-//------------------------------------------------------------
-// Validator methods
-
-func (gv *Validator) Validator() acm.Validator {
-	return acm.ConcreteValidator{
-		Address:   gv.PublicKey.Address(),
-		PublicKey: gv.PublicKey,
-		Power:     uint64(gv.Amount),
-	}.Validator()
-}
-
-// Clone clones the genesis validator
-func (gv *Validator) Clone() Validator {
-	// clone the addresses to unbond to
-	unbondToClone := make([]BasicAccount, len(gv.UnbondTo))
-	for i, basicAccount := range gv.UnbondTo {
-		unbondToClone[i] = basicAccount.Clone()
-	}
-	return Validator{
-		BasicAccount: BasicAccount{
-			PublicKey: gv.PublicKey,
-			Amount:    gv.Amount,
-		},
-		Name:        gv.Name,
-		UnbondTo:    unbondToClone,
-		NodeAddress: gv.NodeAddress,
-	}
-}
-
-//------------------------------------------------------------
-// BasicAccount methods
-
-// Clone clones the basic account
-func (basicAccount *BasicAccount) Clone() BasicAccount {
-	return BasicAccount{
-		Address: basicAccount.Address,
-		Amount:  basicAccount.Amount,
-	}
-}
-
-// MakeGenesisDocFromAccounts takes a chainName and a slice of pointers to Account,
+// MakeGenesisDoc takes a chainName and a slice of pointers to Account,
 // and a slice of pointers to Validator to construct a GenesisDoc, or returns an error on
 // failure.  In particular MakeGenesisDocFromAccount uses the local time as a
 // timestamp for the GenesisDoc.
-func MakeGenesisDocFromAccounts(chainName string, salt []byte, genesisTime time.Time, accounts map[string]acm.Account,
-	validators map[string]acm.Validator) *GenesisDoc {
+func MakeGenesisDoc(chainName string, salt []byte, genesisTime time.Time, globalPermissions ptypes.AccountPermissions,
+	names map[crypto.Address]string, accounts []*acm.Account, validators []acm.Validator) *GenesisDoc {
 
-	// Establish deterministic order of accounts by name so we obtain identical GenesisDoc
+	// Establish deterministic order of accounts by address so we obtain identical GenesisDoc
 	// from identical input
-	names := make([]string, 0, len(accounts))
-	for name := range accounts {
-		names = append(names, name)
+	sort.SliceStable(accounts, func(i, j int) bool {
+		return bytes.Compare(accounts[i].Address().Bytes(), accounts[j].Address().Bytes()) < 0
+	})
+
+	sort.SliceStable(validators, func(i, j int) bool {
+		return bytes.Compare(validators[i].Address().Bytes(), validators[j].Address().Bytes()) < 0
+	})
+
+	// copy slice of pointers to accounts
+	genAccounts := make([]genAccount, 0, len(accounts))
+	for _, account := range accounts {
+		genAccount := makeGenesisAccount(account)
+		genAccount.Name = names[genAccount.Address]
+
+		genAccounts = append(genAccounts, genAccount)
 	}
-	sort.Strings(names)
-	// copy slice of pointers to accounts into slice of accounts
-	genesisAccounts := make([]Account, 0, len(accounts))
-	for _, name := range names {
-		genesisAccounts = append(genesisAccounts, GenesisAccountFromAccount(name, accounts[name]))
+
+	// copy slice of pointers to validators
+	genValidators := make([]genValidator, 0, len(validators))
+	for _, validator := range validators {
+		genValidator := makeGenesisValidator(validator)
+
+		genValidators = append(genValidators, genValidator)
 	}
-	// Sigh...
-	names = names[:0]
-	for name := range validators {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	// copy slice of pointers to validators into slice of validators
-	genesisValidators := make([]Validator, 0, len(validators))
-	for _, name := range names {
-		val := validators[name]
-		genesisValidators = append(genesisValidators, Validator{
-			Name: name,
-			BasicAccount: BasicAccount{
-				Address:   val.Address(),
-				PublicKey: val.PublicKey(),
-				Amount:    val.Power(),
-			},
-			// Simpler to just do this by convention
-			UnbondTo: []BasicAccount{
-				{
-					Amount:  val.Power(),
-					Address: val.Address(),
-				},
-			},
-		})
-	}
+
 	return &GenesisDoc{
 		ChainName:         chainName,
 		Salt:              salt,
 		GenesisTime:       genesisTime,
-		GlobalPermissions: permission.DefaultAccountPermissions.Clone(),
-		Accounts:          genesisAccounts,
-		Validators:        genesisValidators,
+		GlobalPermissions: globalPermissions,
+		GenAccounts:       genAccounts,
+		GenValidators:     genValidators,
 	}
 }

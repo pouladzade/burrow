@@ -82,14 +82,13 @@ func NewNode(conf *config.Config, privValidator tm_types.PrivValidator, genesisD
 }
 
 func DeriveGenesisDoc(burrowGenesisDoc *genesis.GenesisDoc) *tm_types.GenesisDoc {
-	validators := make([]tm_types.GenesisValidator, len(burrowGenesisDoc.Validators))
-	for i, validator := range burrowGenesisDoc.Validators {
+	validators := make([]tm_types.GenesisValidator, len(burrowGenesisDoc.Validators()))
+	for i, validator := range burrowGenesisDoc.Validators() {
 		tm := tm_crypto.PubKeyEd25519{}
-		copy(tm[:], validator.PublicKey.RawBytes())
+		copy(tm[:], validator.PublicKey().RawBytes())
 		validators[i] = tm_types.GenesisValidator{
 			PubKey: tm,
-			Name:   validator.Name,
-			Power:  int64(validator.Amount),
+			Power:  int64(validator.Power()),
 		}
 	}
 	return &tm_types.GenesisDoc{

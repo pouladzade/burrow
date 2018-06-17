@@ -21,7 +21,8 @@ import (
 var (
 	ZeroBasePermissions    = types.BasePermissions{0, 0}
 	ZeroAccountPermissions = types.AccountPermissions{
-		Base: ZeroBasePermissions,
+		Base:  ZeroBasePermissions,
+		Roles: []string{},
 	}
 	DefaultAccountPermissions = types.AccountPermissions{
 		Base: types.BasePermissions{

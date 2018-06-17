@@ -30,7 +30,7 @@ func (ctx *NameContext) Execute(txEnv *txs.Envelope) error {
 		return fmt.Errorf("payload must be NameTx, but is: %v", txEnv.Tx.Payload)
 	}
 	// Validate input
-	inAcc, err := state.GetMutableAccount(ctx.StateWriter, ctx.tx.Input.Address)
+	inAcc, err := state.GetAccount(ctx.StateWriter, ctx.tx.Input.Address)
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func (ctx *NameContext) Execute(txEnv *txs.Envelope) error {
 		"old_sequence", inAcc.Sequence(),
 		"new_sequence", inAcc.Sequence()+1)
 	inAcc.IncSequence()
-	inAcc, err = inAcc.SubtractFromBalance(value)
+	err = inAcc.SubtractFromBalance(value)
 	if err != nil {
 		return err
 	}

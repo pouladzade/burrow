@@ -33,55 +33,12 @@ type Addressable interface {
 	PublicKey() crypto.PublicKey
 }
 
-// The default immutable interface to an account
-type Account interface {
-	Addressable
-	// The value held by this account in terms of the chain-native token
-	Balance() uint64
-	// The EVM byte code held by this account (or equivalently, this contract)
-	Code() Bytecode
-	// The sequence number of this account, incremented each time a mutation of the
-	// Account is persisted to the blockchain state
-	Sequence() uint64
-	// The hash of all the values in this accounts storage (typically the root of some subtree
-	// in the merkle tree of global storage state)
-	StorageRoot() []byte
-	// The permission flags and roles for this account
-	Permissions() ptypes.AccountPermissions
-	// Obtain a deterministic serialisation of this account
-	// (i.e. update order and Go runtime independent)
-	Encode() ([]byte, error)
-	// String representation of the account
-	String() string
+// Account structure
+type Account struct {
+	data accountData
 }
 
-type MutableAccount interface {
-	Account
-	// Set public key (needed for lazy initialisation), should also set the dependent address
-	SetPublicKey(pubKey crypto.PublicKey) MutableAccount
-	// Subtract amount from account balance (will panic if amount is greater than balance)
-	SubtractFromBalance(amount uint64) (MutableAccount, error)
-	// Add amount to balance (will panic if amount plus balance is a uint64 overflow)
-	AddToBalance(amount uint64) (MutableAccount, error)
-	// Set EVM byte code associated with account
-	SetCode(code []byte) MutableAccount
-	// Increment Sequence number by 1 (capturing the current Sequence number as the index for any pending mutations)
-	IncSequence() MutableAccount
-	// Set the storage root hash
-	SetStorageRoot(storageRoot []byte) MutableAccount
-	// Set account permissions
-	SetPermissions(permissions ptypes.AccountPermissions) MutableAccount
-	// Get a pointer this account's AccountPermissions in order to mutate them
-	MutablePermissions() *ptypes.AccountPermissions
-	// Create a complete copy of this MutableAccount that is itself mutable
-	Copy() MutableAccount
-}
-
-// -------------------------------------------------
-// ConcreteAccount
-
-// ConcreteAccount is the canonical serialisation and bash-in-place object for an Account
-type ConcreteAccount struct {
+type accountData struct {
 	Address     crypto.Address
 	PublicKey   crypto.PublicKey
 	Sequence    uint64
@@ -91,234 +48,119 @@ type ConcreteAccount struct {
 	Permissions ptypes.AccountPermissions
 }
 
-func NewConcreteAccount(pubKey crypto.PublicKey) ConcreteAccount {
-	return ConcreteAccount{
-		Address:   pubKey.Address(),
-		PublicKey: pubKey,
-	}
-}
-
-func NewConcreteAccountFromSecret(secret string) ConcreteAccount {
-	return NewConcreteAccount(crypto.PrivateKeyFromSecret(secret, crypto.CurveTypeEd25519).GetPublicKey())
-}
-
-// Return as immutable Account
-func (acc ConcreteAccount) Account() Account {
-	return concreteAccountWrapper{&acc}
-}
-
-// Return as mutable MutableAccount
-func (acc ConcreteAccount) MutableAccount() MutableAccount {
-	return concreteAccountWrapper{&acc}
-}
-
-func (acc *ConcreteAccount) Copy() *ConcreteAccount {
-	accCopy := *acc
-	return &accCopy
-}
-
-func (acc *ConcreteAccount) String() string {
-	if acc == nil {
-		return "Account{nil}"
-	}
-
-	return fmt.Sprintf("Account{Address: %s; Sequence: %v; PublicKey: %v Balance: %v; CodeBytes: %v; StorageRoot: 0x%X; Permissions: %s}",
-		acc.Address, acc.Sequence, acc.PublicKey, acc.Balance, len(acc.Code), acc.StorageRoot, acc.Permissions)
-}
-
-// ConcreteAccount
-// -------------------------------------------------
-// Conversions
-//
-// Using the naming convention is this package of 'As<Type>' being
-// a conversion from Account to <Type> and 'From<Type>' being conversion
-// from <Type> to Account. Conversions are done by copying
-
-// Returns a mutable, serialisable ConcreteAccount by copying from account
-func AsConcreteAccount(account Account) *ConcreteAccount {
-	if account == nil {
-		return nil
-	}
-	// Avoid a copy
-	if ca, ok := account.(concreteAccountWrapper); ok {
-		return ca.ConcreteAccount
-	}
-	return &ConcreteAccount{
-		Address:     account.Address(),
-		PublicKey:   account.PublicKey(),
-		Balance:     account.Balance(),
-		Code:        account.Code(),
-		Sequence:    account.Sequence(),
-		StorageRoot: account.StorageRoot(),
-		Permissions: account.Permissions(),
-	}
-}
-
-// Creates an otherwise zeroed Account from an Addressable and returns it as MutableAccount
-func FromAddressable(addressable Addressable) MutableAccount {
-	return ConcreteAccount{
-		Address:   addressable.Address(),
-		PublicKey: addressable.PublicKey(),
-		// Since nil slices and maps compare differently to empty ones
-		Code:        Bytecode{},
-		StorageRoot: []byte{},
-		Permissions: ptypes.AccountPermissions{
-			Roles: []string{},
+///---- Constructors
+func NewAccount(pubKey crypto.PublicKey, permissions ptypes.AccountPermissions) *Account {
+	return &Account{
+		data: accountData{
+			Address:     pubKey.Address(),
+			PublicKey:   pubKey,
+			Permissions: permissions,
 		},
-	}.MutableAccount()
-}
-
-// Returns an immutable account by copying from account
-func AsAccount(account Account) Account {
-	if account == nil {
-		return nil
 	}
-	return AsConcreteAccount(account).Account()
 }
 
-// Returns a MutableAccount by copying from account
-func AsMutableAccount(account Account) MutableAccount {
-	if account == nil {
-		return nil
+func NewContractAccount(address crypto.Address, permissions ptypes.AccountPermissions) *Account {
+	return &Account{
+		data: accountData{
+			Address:     address,
+			PublicKey:   crypto.PublicKey{},
+			Permissions: permissions,
+		},
 	}
-	return AsConcreteAccount(account).MutableAccount()
 }
 
-//----------------------------------------------
-// concreteAccount Wrapper
-
-// concreteAccountWrapper wraps ConcreteAccount to provide a immutable read-only view
-// via its implementation of Account and a mutable implementation via its implementation of
-// MutableAccount
-type concreteAccountWrapper struct {
-	*ConcreteAccount `json:"unwrap"`
+/// For tests
+func NewAccountFromSecret(secret string, permissions ptypes.AccountPermissions) *Account {
+	return NewAccount(crypto.PrivateKeyFromSecret(secret, crypto.CurveTypeEd25519).GetPublicKey(),
+		permissions)
 }
 
-var _ Account = concreteAccountWrapper{}
-
-func (caw concreteAccountWrapper) Address() crypto.Address {
-	return caw.ConcreteAccount.Address
+func NewContractAccountFromSecret(secret string, permissions ptypes.AccountPermissions) *Account {
+	addr := crypto.NewContractAddress(crypto.PrivateKeyFromSecret(secret, crypto.CurveTypeEd25519).GetPublicKey().Address(), 1)
+	return NewContractAccount(addr, permissions)
 }
 
-func (caw concreteAccountWrapper) PublicKey() crypto.PublicKey {
-	return caw.ConcreteAccount.PublicKey
-}
+///---- Getter methods
+func (acc Account) Address() crypto.Address                { return acc.data.Address }
+func (acc Account) PublicKey() crypto.PublicKey            { return acc.data.PublicKey }
+func (acc Account) Balance() uint64                        { return acc.data.Balance }
+func (acc Account) Code() Bytecode                         { return acc.data.Code }
+func (acc Account) Sequence() uint64                       { return acc.data.Sequence }
+func (acc Account) StorageRoot() []byte                    { return acc.data.StorageRoot }
+func (acc Account) Permissions() ptypes.AccountPermissions { return acc.data.Permissions }
 
-func (caw concreteAccountWrapper) Balance() uint64 {
-	return caw.ConcreteAccount.Balance
-}
-
-func (caw concreteAccountWrapper) Code() Bytecode {
-	return caw.ConcreteAccount.Code
-}
-
-func (caw concreteAccountWrapper) Sequence() uint64 {
-	return caw.ConcreteAccount.Sequence
-}
-
-func (caw concreteAccountWrapper) StorageRoot() []byte {
-	return caw.ConcreteAccount.StorageRoot
-}
-
-func (caw concreteAccountWrapper) Permissions() ptypes.AccountPermissions {
-	return caw.ConcreteAccount.Permissions
-}
-
-func (caw concreteAccountWrapper) Encode() ([]byte, error) {
-	return caw.ConcreteAccount.Encode()
-}
-
-func (caw concreteAccountWrapper) String() string {
-	return caw.ConcreteAccount.String()
-}
-
-func (caw concreteAccountWrapper) MarshalJSON() ([]byte, error) {
-	return json.Marshal(caw.ConcreteAccount)
-}
-
-// Account mutation via MutableAccount interface
-var _ MutableAccount = concreteAccountWrapper{}
-
-func (caw concreteAccountWrapper) SetPublicKey(pubKey crypto.PublicKey) MutableAccount {
-	caw.ConcreteAccount.PublicKey = pubKey
-	addressFromPubKey := pubKey.Address()
-	// We don't want the wrong public key to take control of an account so we panic here
-	if caw.ConcreteAccount.Address != addressFromPubKey {
-		panic(fmt.Errorf("attempt to set public key of account %s to %v, "+
-			"but that public key has address %s",
-			caw.ConcreteAccount.Address, pubKey, addressFromPubKey))
+///---- Mutable methods
+func (acc *Account) SubtractFromBalance(amount uint64) error {
+	if amount > acc.Balance() {
+		return fmt.Errorf("insufficient funds: attempt to subtract %v from the balance of %s",
+			amount, acc.Address())
 	}
-	return caw
+	acc.data.Balance -= amount
+	return nil
 }
 
-func (caw concreteAccountWrapper) SubtractFromBalance(amount uint64) (MutableAccount, error) {
-	if amount > caw.Balance() {
-		return nil, fmt.Errorf("insufficient funds: attempt to subtract %v from the balance of %s",
-			amount, caw.ConcreteAccount)
+func (acc *Account) AddToBalance(amount uint64) error {
+	if binary.IsUint64SumOverflow(acc.Balance(), amount) {
+		return fmt.Errorf("uint64 overflow: attempt to add %v to the balance of %s",
+			amount, acc.Address())
 	}
-	caw.ConcreteAccount.Balance -= amount
-	return caw, nil
+	acc.data.Balance += amount
+	return nil
 }
 
-func (caw concreteAccountWrapper) AddToBalance(amount uint64) (MutableAccount, error) {
-	if binary.IsUint64SumOverflow(caw.Balance(), amount) {
-		return nil, fmt.Errorf("uint64 overflow: attempt to add %v to the balance of %s",
-			amount, caw.ConcreteAccount)
-	}
-	caw.ConcreteAccount.Balance += amount
-	return caw, nil
+func (acc *Account) SetCode(code []byte) error {
+	acc.data.Code = code
+	return nil
 }
 
-func (caw concreteAccountWrapper) SetCode(code []byte) MutableAccount {
-	caw.ConcreteAccount.Code = code
-	return caw
+func (acc *Account) IncSequence() {
+	acc.data.Sequence++
 }
 
-func (caw concreteAccountWrapper) IncSequence() MutableAccount {
-	caw.ConcreteAccount.Sequence += 1
-	return caw
+func (acc *Account) SetStorageRoot(storageRoot []byte) error {
+	acc.data.StorageRoot = storageRoot
+	return nil
 }
 
-func (caw concreteAccountWrapper) SetStorageRoot(storageRoot []byte) MutableAccount {
-	caw.ConcreteAccount.StorageRoot = storageRoot
-	return caw
+func (acc *Account) SetPermissions(permissions ptypes.AccountPermissions) error {
+	acc.data.Permissions = permissions
+	return nil
 }
 
-func (caw concreteAccountWrapper) SetPermissions(permissions ptypes.AccountPermissions) MutableAccount {
-	caw.ConcreteAccount.Permissions = permissions
-	return caw
+func (acc *Account) MutablePermissions() *ptypes.AccountPermissions {
+	return &acc.data.Permissions
 }
 
-func (caw concreteAccountWrapper) MutablePermissions() *ptypes.AccountPermissions {
-	return &caw.ConcreteAccount.Permissions
-}
-
-func (caw concreteAccountWrapper) Copy() MutableAccount {
-	return concreteAccountWrapper{caw.ConcreteAccount.Copy()}
-}
-
-// concreteAccount Wrapper
-//----------------------------------------------
-// Encoding/decoding
+///---- Serialisation methods
 var cdc = amino.NewCodec()
 
-func (acc *ConcreteAccount) Encode() ([]byte, error) {
-	return cdc.MarshalBinary(acc)
+func (acc Account) Encode() ([]byte, error) {
+	return cdc.MarshalBinary(acc.data)
 }
 
-func Decode(accBytes []byte) (Account, error) {
-	ca, err := DecodeConcrete(accBytes)
-	if err != nil {
-		return nil, err
-	}
-	return ca.Account(), nil
-}
+func Decode(bytes []byte) (*Account, error) {
+	var account Account
 
-func DecodeConcrete(accBytes []byte) (*ConcreteAccount, error) {
-	ca := new(ConcreteAccount)
-	err := cdc.UnmarshalBinary(accBytes, ca)
+	err := cdc.UnmarshalBinary(bytes, &account.data)
 	if err != nil {
 		return nil, fmt.Errorf("could not convert decoded account to *ConcreteAccount: %v", err)
 	}
-	return ca, nil
+	return &account, nil
+}
+
+func (acc Account) MarshalJSON() ([]byte, error) {
+	return json.Marshal(acc.data)
+}
+func (acc *Account) UnmarshalJSON(bytes []byte) error {
+	err := json.Unmarshal(bytes, &acc.data)
+	if err != nil {
+		// Don't swallow deserialisation errors
+		return err
+	}
+	return nil
+}
+
+func (acc Account) String() string {
+	return fmt.Sprintf("Account{Address: %s; Sequence: %v; PublicKey: %v Balance: %v; CodeBytes: %v; StorageRoot: 0x%X; Permissions: %s}",
+		acc.Address(), acc.Sequence(), acc.PublicKey(), acc.Balance(), len(acc.Code()), acc.StorageRoot(), acc.Permissions())
 }

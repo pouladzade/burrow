@@ -104,7 +104,7 @@ func NewState(db dbm.DB) *State {
 
 // Make genesis state from GenesisDoc and save to DB
 func MakeGenesisState(db dbm.DB, genesisDoc *genesis.GenesisDoc) (*State, error) {
-	if len(genesisDoc.Validators) == 0 {
+	if len(genesisDoc.Validators()) == 0 {
 		return nil, fmt.Errorf("the genesis file has no validators")
 	}
 
@@ -120,14 +120,11 @@ func MakeGenesisState(db dbm.DB, genesisDoc *genesis.GenesisDoc) (*State, error)
 	}
 
 	// Make accounts state tree
-	for _, genAcc := range genesisDoc.Accounts {
-		perm := genAcc.Permissions
-		acc := &acm.ConcreteAccount{
-			Address:     genAcc.Address,
-			Balance:     genAcc.Amount,
-			Permissions: perm,
-		}
-		err := s.writeState.UpdateAccount(acc.Account())
+	for _, genAcc := range genesisDoc.Accounts() {
+		perm := genAcc.Permissions()
+		acc := acm.NewAccount(genAcc.PublicKey(), perm)
+		acc.AddToBalance(genAcc.Balance())
+		err := s.writeState.UpdateAccount(acc)
 		if err != nil {
 			return nil, err
 		}
@@ -141,12 +138,10 @@ func MakeGenesisState(db dbm.DB, genesisDoc *genesis.GenesisDoc) (*State, error)
 	// Without it the HasPermission() functions will fail
 	globalPerms.Base.SetBit = ptypes.AllPermFlags
 
-	permsAcc := &acm.ConcreteAccount{
-		Address:     acm.GlobalPermissionsAddress,
-		Balance:     1337,
-		Permissions: globalPerms,
-	}
-	err := s.writeState.UpdateAccount(permsAcc.Account())
+	permsAcc := acm.NewContractAccount(acm.GlobalPermissionsAddress, globalPerms)
+	permsAcc.AddToBalance(1337)
+
+	err := s.writeState.UpdateAccount(permsAcc)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +229,7 @@ func (ws *writeState) SetVersion(hash []byte, version int64) {
 }
 
 // Returns nil if account does not exist with given address.
-func (s *State) GetAccount(address crypto.Address) (acm.Account, error) {
+func (s *State) GetAccount(address crypto.Address) (*acm.Account, error) {
 	_, accBytes := s.readTree.Get(prefixedKey(accountsPrefix, address.Bytes()))
 	if accBytes == nil {
 		return nil, nil
@@ -242,15 +237,12 @@ func (s *State) GetAccount(address crypto.Address) (acm.Account, error) {
 	return acm.Decode(accBytes)
 }
 
-func (ws *writeState) UpdateAccount(account acm.Account) error {
+func (ws *writeState) UpdateAccount(account *acm.Account) error {
 	if account == nil {
 		return fmt.Errorf("UpdateAccount passed nil account in execution.State")
 	}
-	// TODO: find a way to implement something equivalent to this so we can set the account StorageRoot
-	//storageRoot := s.tree.SubTreeHash(prefixedKey(storagePrefix, account.Address().Bytes()))
-	// Alternatively just abandon and
-	accountWithStorageRoot := acm.AsMutableAccount(account).SetStorageRoot(nil)
-	encodedAccount, err := accountWithStorageRoot.Encode()
+
+	encodedAccount, err := account.Encode()
 	if err != nil {
 		return err
 	}
@@ -263,10 +255,9 @@ func (ws *writeState) RemoveAccount(address crypto.Address) error {
 	return nil
 }
 
-func (s *State) IterateAccounts(consumer func(acm.Account) (stop bool)) (stopped bool, err error) {
+func (s *State) IterateAccounts(consumer func(*acm.Account) (stop bool)) (stopped bool, err error) {
 	stopped = s.readTree.IterateRange(accountsStart, accountsEnd, true, func(key, value []byte) bool {
-		var account acm.Account
-		account, err = acm.Decode(value)
+		account, err := acm.Decode(value)
 		if err != nil {
 			return true
 		}
@@ -442,4 +433,16 @@ func prefixKeyRange(prefix string) (start, end []byte) {
 		}
 	}
 	return
+}
+
+//// TODO: BY mostafa
+func (s *State) UpdateAccount(account *acm.Account) error {
+	return s.writeState.UpdateAccount(account)
+}
+
+func (s *State) RemoveAccount(address crypto.Address) error {
+	return s.writeState.RemoveAccount(address)
+}
+func (s *State) SetStorage(address crypto.Address, key, value binary.Word256) error {
+	return s.writeState.SetStorage(address, key, value)
 }

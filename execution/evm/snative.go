@@ -230,7 +230,7 @@ func NewSNativeContract(comment, name string,
 // This function is designed to be called from the EVM once a SNative contract
 // has been selected. It is also placed in a registry by registerSNativeContracts
 // So it can be looked up by SNative address
-func (contract *SNativeContractDescription) Dispatch(state state.ReaderWriter, caller acm.Account,
+func (contract *SNativeContractDescription) Dispatch(state state.ReaderWriter, caller *acm.Account,
 	args []byte, gas *uint64, logger *logging.Logger) (output []byte, err error) {
 
 	logger = logger.With(structure.ScopeKey, "Dispatch", "contract_name", contract.Name)
@@ -343,7 +343,7 @@ func abiReturn(name string, abiTypeName abi.TypeName) abi.Return {
 // Permission function defintions
 
 // TODO: catch errors, log em, return 0s to the vm (should some errors cause exceptions though?)
-func hasBase(state state.ReaderWriter, caller acm.Account, args []byte, gas *uint64,
+func hasBase(state state.ReaderWriter, caller *acm.Account, args []byte, gas *uint64,
 	logger *logging.Logger) (output []byte, err error) {
 
 	addrWord256, permNum := returnTwoArgs(args)
@@ -369,12 +369,12 @@ func hasBase(state state.ReaderWriter, caller acm.Account, args []byte, gas *uin
 	return LeftPadWord256([]byte{permInt}).Bytes(), nil
 }
 
-func setBase(stateWriter state.ReaderWriter, caller acm.Account, args []byte, gas *uint64,
+func setBase(stateWriter state.ReaderWriter, caller *acm.Account, args []byte, gas *uint64,
 	logger *logging.Logger) (output []byte, err error) {
 
 	addrWord256, permNum, permVal := returnThreeArgs(args)
 	address := crypto.AddressFromWord256(addrWord256)
-	acc, err := state.GetMutableAccount(stateWriter, address)
+	acc, err := state.GetAccount(stateWriter, address)
 	if err != nil {
 		return nil, err
 	}
@@ -396,12 +396,12 @@ func setBase(stateWriter state.ReaderWriter, caller acm.Account, args []byte, ga
 	return effectivePermBytes(acc.Permissions().Base, globalPerms(stateWriter)), nil
 }
 
-func unsetBase(stateWriter state.ReaderWriter, caller acm.Account, args []byte, gas *uint64,
+func unsetBase(stateWriter state.ReaderWriter, caller *acm.Account, args []byte, gas *uint64,
 	logger *logging.Logger) (output []byte, err error) {
 
 	addrWord256, permNum := returnTwoArgs(args)
 	address := crypto.AddressFromWord256(addrWord256)
-	acc, err := state.GetMutableAccount(stateWriter, address)
+	acc, err := state.GetAccount(stateWriter, address)
 	if err != nil {
 		return nil, err
 	}
@@ -423,11 +423,11 @@ func unsetBase(stateWriter state.ReaderWriter, caller acm.Account, args []byte, 
 	return effectivePermBytes(acc.Permissions().Base, globalPerms(stateWriter)), nil
 }
 
-func setGlobal(stateWriter state.ReaderWriter, caller acm.Account, args []byte, gas *uint64,
+func setGlobal(stateWriter state.ReaderWriter, caller *acm.Account, args []byte, gas *uint64,
 	logger *logging.Logger) (output []byte, err error) {
 
 	permNum, permVal := returnTwoArgs(args)
-	acc, err := state.GetMutableAccount(stateWriter, acm.GlobalPermissionsAddress)
+	acc, err := state.GetAccount(stateWriter, acm.GlobalPermissionsAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +449,7 @@ func setGlobal(stateWriter state.ReaderWriter, caller acm.Account, args []byte, 
 	return permBytes(acc.Permissions().Base.ResultantPerms()), nil
 }
 
-func hasRole(state state.ReaderWriter, caller acm.Account, args []byte, gas *uint64,
+func hasRole(state state.ReaderWriter, caller *acm.Account, args []byte, gas *uint64,
 	logger *logging.Logger) (output []byte, err error) {
 
 	addrWord256, role := returnTwoArgs(args)
@@ -470,12 +470,12 @@ func hasRole(state state.ReaderWriter, caller acm.Account, args []byte, gas *uin
 	return LeftPadWord256([]byte{permInt}).Bytes(), nil
 }
 
-func addRole(stateWriter state.ReaderWriter, caller acm.Account, args []byte, gas *uint64,
+func addRole(stateWriter state.ReaderWriter, caller *acm.Account, args []byte, gas *uint64,
 	logger *logging.Logger) (output []byte, err error) {
 
 	addrWord256, role := returnTwoArgs(args)
 	address := crypto.AddressFromWord256(addrWord256)
-	acc, err := state.GetMutableAccount(stateWriter, address)
+	acc, err := state.GetAccount(stateWriter, address)
 	if err != nil {
 		return nil, err
 	}
@@ -492,12 +492,12 @@ func addRole(stateWriter state.ReaderWriter, caller acm.Account, args []byte, ga
 	return LeftPadWord256([]byte{permInt}).Bytes(), nil
 }
 
-func removeRole(stateWriter state.ReaderWriter, caller acm.Account, args []byte, gas *uint64,
+func removeRole(stateWriter state.ReaderWriter, caller *acm.Account, args []byte, gas *uint64,
 	logger *logging.Logger) (output []byte, err error) {
 
 	addrWord256, role := returnTwoArgs(args)
 	address := crypto.AddressFromWord256(addrWord256)
-	acc, err := state.GetMutableAccount(stateWriter, address)
+	acc, err := state.GetAccount(stateWriter, address)
 	if err != nil {
 		return nil, err
 	}
@@ -527,7 +527,7 @@ func globalPerms(stateWriter state.ReaderWriter) ptypes.BasePermissions {
 	return state.GlobalAccountPermissions(stateWriter).Base
 }
 
-// Compute the effective permissions from an acm.Account's BasePermissions by
+// Compute the effective permissions from an *acm.Account's BasePermissions by
 // taking the bitwise or with the global BasePermissions resultant permissions
 func effectivePermBytes(basePerms ptypes.BasePermissions,
 	globalPerms ptypes.BasePermissions) []byte {

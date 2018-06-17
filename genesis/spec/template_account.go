@@ -3,8 +3,8 @@ package spec
 import (
 	"fmt"
 
+	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/crypto"
-	"github.com/hyperledger/burrow/genesis"
 	"github.com/hyperledger/burrow/keys"
 	"github.com/hyperledger/burrow/permission"
 	ptypes "github.com/hyperledger/burrow/permission/types"
@@ -23,39 +23,24 @@ type TemplateAccount struct {
 	Roles       []string          `json:",omitempty" toml:",omitempty"`
 }
 
-func (ta TemplateAccount) Validator(keyClient keys.KeyClient, index int, generateNodeKeys bool) (*genesis.Validator, error) {
+func (ta TemplateAccount) Validator(keyClient keys.KeyClient, generateNodeKeys bool) (acm.Validator, error) {
 	var err error
-	gv := new(genesis.Validator)
-	gv.PublicKey, gv.Address, err = ta.RealisePubKeyAndAddress(keyClient)
+	publicKey, _, err := ta.RealisePubKeyAndAddress(keyClient)
 	if err != nil {
 		return nil, err
 	}
-	if generateNodeKeys && ta.NodeAddress == nil {
-		// If neither PublicKey or Address set then generate a new one
-		address, err := keyClient.Generate("nodekey-"+ta.Name, crypto.CurveTypeEd25519)
-		if err != nil {
-			return nil, err
-		}
-		ta.NodeAddress = &address
-	}
-	if ta.Power == nil {
-		gv.Amount = DefaultPower
-	} else {
-		gv.Amount = *ta.Power
-	}
-	if ta.Name == "" {
-		gv.Name = accountNameFromIndex(index)
-	} else {
-		gv.Name = ta.Name
+
+	amountBonded := DefaultPower
+	if ta.Power != nil {
+		amountBonded = *ta.Power
 	}
 
-	gv.UnbondTo = []genesis.BasicAccount{{
-		Address:   gv.Address,
-		PublicKey: gv.PublicKey,
-		Amount:    gv.Amount,
-	}}
-	gv.NodeAddress = ta.NodeAddress
-	return gv, nil
+	account := acm.NewAccount(publicKey, permission.ZeroAccountPermissions)
+	account.AddToBalance(amountBonded)
+
+	validator := acm.AsValidator(account)
+
+	return validator, nil
 }
 
 func (ta TemplateAccount) AccountPermissions() (ptypes.AccountPermissions, error) {
@@ -69,32 +54,29 @@ func (ta TemplateAccount) AccountPermissions() (ptypes.AccountPermissions, error
 	}, nil
 }
 
-func (ta TemplateAccount) Account(keyClient keys.KeyClient, index int) (*genesis.Account, error) {
-	var err error
-	ga := new(genesis.Account)
-	ga.PublicKey, ga.Address, err = ta.RealisePubKeyAndAddress(keyClient)
+func (ta TemplateAccount) Account(keyClient keys.KeyClient) (*acm.Account, error) {
+
+	publicKey, _, err := ta.RealisePubKeyAndAddress(keyClient)
 	if err != nil {
 		return nil, err
 	}
-	if ta.Amount == nil {
-		ga.Amount = DefaultAmount
-	} else {
-		ga.Amount = *ta.Amount
+
+	amount := DefaultAmount
+	if ta.Amount != nil {
+		amount = *ta.Amount
 	}
-	if ta.Name == "" {
-		ga.Name = accountNameFromIndex(index)
-	} else {
-		ga.Name = ta.Name
-	}
-	if ta.Permissions == nil {
-		ga.Permissions = permission.DefaultAccountPermissions.Clone()
-	} else {
-		ga.Permissions, err = ta.AccountPermissions()
+
+	permissions := permission.DefaultAccountPermissions.Clone()
+	if ta.Permissions != nil {
+		permissions, err = ta.AccountPermissions()
 		if err != nil {
 			return nil, err
 		}
 	}
-	return ga, nil
+
+	account := acm.NewAccount(publicKey, permissions)
+	account.AddToBalance(amount)
+	return account, nil
 }
 
 // Adds a public key and address to the template. If PublicKey will try to fetch it by Address.

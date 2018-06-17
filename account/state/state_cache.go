@@ -60,31 +60,49 @@ func Name(name string) CacheOption {
 	}
 }
 
-func (cache *Cache) GetAccount(address crypto.Address) (acm.Account, error) {
+func (cache *Cache) GetAccount(address crypto.Address) (*acm.Account, error) {
 	accInfo, err := cache.get(address)
 	if err != nil {
 		return nil, err
+	}
+	if accInfo == nil {
+		return nil, nil
 	}
 	accInfo.RLock()
 	defer accInfo.RUnlock()
 	if accInfo.removed {
 		return nil, nil
 	}
-	return accInfo.account, nil
+	account := accInfo.account
+	return &account, nil
 }
 
-func (cache *Cache) UpdateAccount(account acm.Account) error {
+func (cache *Cache) UpdateAccount(account *acm.Account) error {
 	accInfo, err := cache.get(account.Address())
 	if err != nil {
 		return err
 	}
-	accInfo.Lock()
-	defer accInfo.Unlock()
-	if accInfo.removed {
-		return fmt.Errorf("UpdateAccount on a removed account: %s", account.Address())
+	if accInfo == nil {
+		cache.Lock()
+		defer cache.Unlock()
+
+		accInfo = &accountInfo{
+			account: *account,
+			storage: make(map[binary.Word256]binary.Word256),
+		}
+		accInfo.updated = true
+		cache.accounts[account.Address()] = accInfo
+
+	} else {
+		accInfo.Lock()
+		defer accInfo.Unlock()
+		if accInfo.removed {
+			return fmt.Errorf("UpdateAccount on a removed account: %s", account.Address())
+		}
+		accInfo.account = *account
+		accInfo.updated = true
+
 	}
-	accInfo.account = account
-	accInfo.updated = true
 	return nil
 }
 
@@ -103,11 +121,12 @@ func (cache *Cache) RemoveAccount(address crypto.Address) error {
 }
 
 // Iterates over all cached accounts first in cache and then in backend until consumer returns true for 'stop'
-func (cache *Cache) IterateCachedAccount(consumer func(acm.Account) (stop bool)) (stopped bool, err error) {
+func (cache *Cache) IterateCachedAccount(consumer func(*acm.Account) (stop bool)) (stopped bool, err error) {
 	// Try cache first for early exit
 	cache.RLock()
 	for _, info := range cache.accounts {
-		if consumer(info.account) {
+		account := info.account
+		if consumer(&account) {
 			cache.RUnlock()
 			return true, nil
 		}
@@ -144,11 +163,15 @@ func (cache *Cache) GetStorage(address crypto.Address, key binary.Word256) (bina
 // NOTE: Set value to zero to remove.
 func (cache *Cache) SetStorage(address crypto.Address, key binary.Word256, value binary.Word256) error {
 	accInfo, err := cache.get(address)
-	accInfo.Lock()
-	defer accInfo.Unlock()
 	if err != nil {
 		return err
 	}
+	if accInfo == nil {
+		return fmt.Errorf("SetStorage on non existing account: %s", address)
+	}
+
+	accInfo.Lock()
+	defer accInfo.Unlock()
 	if accInfo.removed {
 		return fmt.Errorf("SetStorage on a removed account: %s", address)
 	}
@@ -200,6 +223,11 @@ func (cache *Cache) Sync(state Writer) error {
 			for key := range accInfo.storage {
 				keys = append(keys, key)
 			}
+			// Update account - make sure account exists in the state
+			err := state.UpdateAccount(&accInfo.account)
+			if err != nil {
+				return err
+			}
 			// First update keys
 			sort.Sort(keys)
 			for _, key := range keys {
@@ -211,7 +239,7 @@ func (cache *Cache) Sync(state Writer) error {
 			}
 			// Update account - this gives backend the opportunity to update StorageRoot after calculating the new
 			// value from any storage value updates
-			err := state.UpdateAccount(accInfo.account)
+			err = state.UpdateAccount(&accInfo.account)
 			if err != nil {
 				return err
 			}
@@ -260,8 +288,11 @@ func (cache *Cache) get(address crypto.Address) (*accountInfo, error) {
 			if err != nil {
 				return nil, err
 			}
+			if account == nil {
+				return nil, nil
+			}
 			accInfo = &accountInfo{
-				account: account,
+				account: *account,
 				storage: make(map[binary.Word256]binary.Word256),
 			}
 			cache.accounts[address] = accInfo

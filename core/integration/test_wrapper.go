@@ -27,6 +27,7 @@ import (
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/consensus/tendermint/validator"
 	"github.com/hyperledger/burrow/core"
+	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/genesis"
 	"github.com/hyperledger/burrow/keys"
 	"github.com/hyperledger/burrow/keys/mock"
@@ -101,20 +102,20 @@ func TestWrapper(privateAccounts []acm.PrivateAccount, genesisDoc *genesis.Genes
 }
 
 func TestGenesisDoc(addressables []acm.PrivateAccount) *genesis.GenesisDoc {
-	accounts := make(map[string]acm.Account, len(addressables))
+	accounts := make([]*acm.Account, len(addressables))
 	for i, pa := range addressables {
-		account := acm.FromAddressable(pa)
+		account := acm.NewAccount(pa.PublicKey(), permission.AllAccountPermissions.Clone())
 		account.AddToBalance(1 << 32)
-		account.SetPermissions(permission.AllAccountPermissions.Clone())
-		accounts[fmt.Sprintf("user_%v", i)] = account
+		accounts[i] = account
 	}
 	genesisTime, err := time.Parse("02-01-2006", "27-10-2017")
 	if err != nil {
 		panic("could not parse test genesis time")
 	}
-	return genesis.MakeGenesisDocFromAccounts(chainName, nil, genesisTime, accounts,
-		map[string]acm.Validator{
-			"genesis_validator": acm.AsValidator(accounts["user_0"]),
+	return genesis.MakeGenesisDoc(chainName, nil, genesisTime, permission.DefaultAccountPermissions,
+		map[crypto.Address]string{}, accounts,
+		[]acm.Validator{
+			acm.AsValidator(accounts[0]),
 		})
 }
 

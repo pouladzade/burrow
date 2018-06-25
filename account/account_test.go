@@ -21,7 +21,6 @@ import (
 
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/permission"
-	ptypes "github.com/hyperledger/burrow/permission/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,14 +47,7 @@ func TestAddress(t *testing.T) {
 }
 
 func TestDecode(t *testing.T) {
-	permissions := ptypes.AccountPermissions{
-		Base: ptypes.BasePermissions{
-			Perms:  ptypes.SetGlobal,
-			SetBit: ptypes.SetGlobal,
-		},
-		Roles: []string{"bums"},
-	}
-	acc := NewAccountFromSecret("Super Semi Secret", permissions)
+	acc := NewAccountFromSecret("Super Semi Secret", permission.DefaultAccountPermissions)
 	acc.AddToBalance(100)
 
 	encodedAcc, err := acc.Encode()
@@ -78,8 +70,18 @@ func TestMarshalJSON(t *testing.T) {
 
 	expected := fmt.Sprintf(`{"Address":"%s","PublicKey":{"CurveType":"secp256k1","PublicKey":"%s"},`+
 		`"Sequence":0,"Balance":100,"Code":"3C172D","StorageRoot":null,`+
-		`"Permissions":{"Base":{"Perms":0,"SetBit":0},"Roles":[]}}`,
+		`"Permissions":0}`,
 		acc.Address(), acc.PublicKey())
 	assert.Equal(t, expected, string(bs))
 	assert.NoError(t, err)
+}
+
+func TestPermissions(t *testing.T) {
+	account := NewAccountFromSecret("Super Semi Secret", permission.DefaultAccountPermissions)
+	assert.Equal(t, account.Permissions(), permission.DefaultAccountPermissions)
+	account.SetPermissions(permission.CreateChain)
+	assert.Equal(t, account.Permissions(), permission.DefaultAccountPermissions|permission.CreateChain)
+	assert.Equal(t, account.HasPermissions(permission.InterChainTx), false)
+	account.UnsetPermissions(permission.CreateChain)
+	assert.Equal(t, account.Permissions(), permission.DefaultAccountPermissions)
 }

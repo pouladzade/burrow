@@ -104,7 +104,7 @@ func TestWrapper(privateAccounts []acm.PrivateAccount, genesisDoc *genesis.Genes
 func TestGenesisDoc(addressables []acm.PrivateAccount) *genesis.GenesisDoc {
 	accounts := make([]*acm.Account, len(addressables))
 	for i, pa := range addressables {
-		account := acm.NewAccount(pa.PublicKey(), permission.AllAccountPermissions.Clone())
+		account := acm.NewAccount(pa.PublicKey(), permission.AllAccountPermissions)
 		account.AddToBalance(1 << 32)
 		accounts[i] = account
 	}

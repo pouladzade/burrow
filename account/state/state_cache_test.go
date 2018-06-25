@@ -10,7 +10,6 @@ import (
 	"github.com/hyperledger/burrow/binary"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/execution/evm/asm"
-	ptypes "github.com/hyperledger/burrow/permission/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -294,15 +293,10 @@ func TestStateCache_get(t *testing.T) {
 }
 
 func testAccounts() *MemoryState {
-
 	perm1 := permission.ZeroAccountPermissions
-	perm1.Base.Perms = ptypes.AddRole | ptypes.Send
-	perm1.Base.SetBit = perm1.Base.Perms
 	acc1 := acm.NewAccountFromSecret("acc1", perm1)
 
 	perm2 := permission.ZeroAccountPermissions
-	perm2.Base.Perms = ptypes.AddRole | ptypes.Send
-	perm2.Base.SetBit = perm2.Base.Perms
 	acc2 := acm.NewContractAccountFromSecret("acc2", perm2)
 
 	code, _ := acm.NewBytecode(asm.PUSH1, 0x20)

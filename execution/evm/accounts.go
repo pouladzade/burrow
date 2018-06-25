@@ -4,12 +4,12 @@ import (
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/logging"
-	ptypes "github.com/hyperledger/burrow/permission/types"
+	"github.com/hyperledger/burrow/permission"
 )
 
 // Create a new account from a parent 'creator' account. The creator account will have its
 // sequence number incremented
-func DeriveNewAccount(creator *acm.Account, permissions ptypes.AccountPermissions,
+func DeriveNewAccount(creator *acm.Account, permissions permission.Permissions,
 	logger *logging.Logger) *acm.Account {
 	// Generate an address
 	sequence := creator.Sequence()

@@ -34,7 +34,6 @@ import (
 	"github.com/hyperledger/burrow/keys"
 	"github.com/hyperledger/burrow/logging"
 	"github.com/hyperledger/burrow/logging/structure"
-	"github.com/hyperledger/burrow/permission"
 	"github.com/hyperledger/burrow/project"
 	"github.com/hyperledger/burrow/txs"
 	tm_types "github.com/tendermint/tendermint/types"
@@ -304,10 +303,7 @@ func (s *Service) GetAccountHumanReadable(address crypto.Address) (*ResultGetAcc
 	if acc == nil {
 		return &ResultGetAccountHumanReadable{}, nil
 	}
-	perms, err := permission.BasePermissionsToStringList(acc.Permissions().Base)
-	if acc == nil {
-		return &ResultGetAccountHumanReadable{}, nil
-	}
+
 	return &ResultGetAccountHumanReadable{
 		Account: &AccountHumanReadable{
 			Address:     acc.Address(),
@@ -316,8 +312,7 @@ func (s *Service) GetAccountHumanReadable(address crypto.Address) (*ResultGetAcc
 			Balance:     acc.Balance(),
 			Code:        tokens,
 			StorageRoot: hex.EncodeUpperToString(acc.StorageRoot()),
-			Permissions: perms,
-			Roles:       acc.Permissions().Roles,
+			Permissions: acc.Permissions(),
 		},
 	}, nil
 }

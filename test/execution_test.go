@@ -12,11 +12,11 @@ import (
 	"github.com/hyperledger/burrow/event"
 	"github.com/hyperledger/burrow/execution/errors"
 	"github.com/hyperledger/burrow/execution/events"
+	"github.com/hyperledger/burrow/permission"
 
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/execution"
-	ptypes "github.com/hyperledger/burrow/permission/types"
 	"github.com/hyperledger/burrow/txs"
 	"github.com/hyperledger/burrow/txs/payload"
 	"github.com/stretchr/testify/assert"
@@ -127,9 +127,11 @@ func getAccount(t *testing.T, name string) *acm.Account {
 	return account
 }
 
-func setPermissions(t *testing.T, name string, permissions ptypes.PermFlag) {
+func setPermissions(t *testing.T, name string, permissions permission.Permissions) {
 	account := getAccount(t, name)
-	account.MutablePermissions().Base.Perms = permissions
+	/// First remove all permissions, then set new one
+	account.UnsetPermissions(permission.AllAccountPermissions)
+	account.SetPermissions(permissions)
 	updateAccount(t, account)
 
 	commit(t)
@@ -156,9 +158,9 @@ func checkBalanceByAddress(t *testing.T, address crypto.Address, amount uint64) 
 }
 
 func TestSendTxFails(t *testing.T) {
-	setPermissions(t, "alice", ptypes.Send)
-	setPermissions(t, "bob", ptypes.Call)
-	setPermissions(t, "carol", ptypes.CreateContract)
+	setPermissions(t, "alice", permission.Send)
+	setPermissions(t, "bob", permission.Call)
+	setPermissions(t, "carol", permission.CreateContract)
 
 	tx1 := makeSendTx(t, "alice", "dan", 100)
 	signAndExecute(t, false, tx1, "alice")
@@ -177,8 +179,8 @@ func TestSendTxFails(t *testing.T) {
 }
 
 func TestName(t *testing.T) {
-	setPermissions(t, "alice", ptypes.Send)
-	setPermissions(t, "bob", ptypes.Name)
+	setPermissions(t, "alice", permission.Send)
+	setPermissions(t, "bob", permission.Name)
 
 	// simple name tx without perm should fail
 	tx1 := makeNameTx(t, "alice", "somename", "somedata", 10000)
@@ -191,9 +193,9 @@ func TestName(t *testing.T) {
 
 func TestCallFails(t *testing.T) {
 	setPermissions(t, "alice", 0)
-	setPermissions(t, "bob", ptypes.Send)
-	setPermissions(t, "carol", ptypes.Call)
-	setPermissions(t, "dan", ptypes.CreateContract)
+	setPermissions(t, "bob", permission.Send)
+	setPermissions(t, "carol", permission.Call)
+	setPermissions(t, "dan", permission.CreateContract)
 
 	//-------------------
 	// call txs
@@ -228,7 +230,7 @@ func TestCallFails(t *testing.T) {
 }
 
 func TestSendPermission(t *testing.T) {
-	setPermissions(t, "alice", ptypes.Send)
+	setPermissions(t, "alice", permission.Send)
 	setPermissions(t, "bob", 0)
 
 	// A single input, having the permission, should succeed
@@ -244,7 +246,7 @@ func TestSendPermission(t *testing.T) {
 }
 
 func TestCallPermission(t *testing.T) {
-	setPermissions(t, "alice", ptypes.Call)
+	setPermissions(t, "alice", permission.Call)
 
 	//------------------------------
 	// call to greeter contract
@@ -273,7 +275,7 @@ func TestCallPermission(t *testing.T) {
 	//----------------------------------------------------------
 	// call to contract that calls simple contract - with perm
 	// A single input, having the permission, and the contract has permission
-	caller1Acc.MutablePermissions().Base.Set(ptypes.Call, true)
+	caller1Acc.SetPermissions(permission.Call)
 	updateAccount(t, caller1Acc)
 	tx3 := makeCallTx(t, "alice", &caller1Address, nil, 100)
 	_, err = execTxWaitAccountCall(t, tx3, "alice", caller1Address)
@@ -286,8 +288,8 @@ func TestCallPermission(t *testing.T) {
 	contractCode2 := callContractCode(caller1Address, 0)
 	caller2Acc, caller2Address := makeContractAccount(t, contractCode2, 1000, 0)
 
-	caller1Acc.MutablePermissions().Base.Set(ptypes.Call, false)
-	caller2Acc.MutablePermissions().Base.Set(ptypes.Call, true)
+	caller1Acc.UnsetPermissions(permission.Call)
+	caller2Acc.SetPermissions(permission.Call)
 	updateAccount(t, caller1Acc)
 	updateAccount(t, caller2Acc)
 
@@ -299,7 +301,7 @@ func TestCallPermission(t *testing.T) {
 	// call to contract that calls contract that calls simple contract - without perm
 	// caller1Contract calls simpleContract. caller2Contract calls caller1Contract.
 	// both caller1 and caller2 have permission
-	caller1Acc.MutablePermissions().Base.Set(ptypes.Call, true)
+	caller1Acc.SetPermissions(permission.Call)
 	updateAccount(t, caller1Acc)
 
 	tx5 := makeCallTx(t, "alice", &caller2Address, nil, 100)
@@ -308,7 +310,7 @@ func TestCallPermission(t *testing.T) {
 }
 
 func TestCreatePermission(t *testing.T) {
-	setPermissions(t, "alice", ptypes.Call|ptypes.CreateContract)
+	setPermissions(t, "alice", permission.Call|permission.CreateContract)
 
 	//------------------------------
 	// create a simple contract
@@ -356,7 +358,7 @@ func TestCreatePermission(t *testing.T) {
 
 	//------------------------------
 	// call the contract (should PASS)
-	contractAcc.MutablePermissions().Base.Set(ptypes.CreateContract, true)
+	contractAcc.SetPermissions(permission.CreateContract)
 	updateAccount(t, contractAcc)
 
 	tx4 := makeCallTx(t, "alice", &contractAddr, createCode, 100)
@@ -367,7 +369,7 @@ func TestCreatePermission(t *testing.T) {
 	// call the empty address
 	code := callContractCode(crypto.Address{}, 0)
 
-	_, contractAddr2 := makeContractAccount(t, code, 1000, ptypes.Call|ptypes.CreateContract)
+	_, contractAddr2 := makeContractAccount(t, code, 1000, permission.Call|permission.CreateContract)
 
 	// this should call the 0 address but not create ...
 	tx5 := makeCallTx(t, "alice", &contractAddr2, createCode, 100)
@@ -382,9 +384,9 @@ func TestCreatePermission(t *testing.T) {
 }
 
 func TestCreateAccountPermission(t *testing.T) {
-	setPermissions(t, "alice", ptypes.Send|ptypes.CreateAccount)
-	setPermissions(t, "bob", ptypes.Send)
-	setPermissions(t, "carol", ptypes.Call)
+	setPermissions(t, "alice", permission.Send|permission.CreateAccount)
+	setPermissions(t, "bob", permission.Send)
+	setPermissions(t, "carol", permission.Call)
 
 	aliceBalance := getBalance(t, "alice")
 	bobBalance := getBalance(t, "bob")
@@ -418,7 +420,7 @@ func TestCreateAccountPermission(t *testing.T) {
 	signAndExecute(t, true, tx4, "alice", "bob")
 
 	// Two inputs, both with send, both with create, should pass
-	setPermissions(t, "bob", ptypes.Send|ptypes.CreateAccount)
+	setPermissions(t, "bob", permission.Send|permission.CreateAccount)
 	tx5 := makeSendTx(t, "alice", "", 5)
 	tx5.AddInput(bc1State, accountPool["bob"].PublicKey(), 5+fee)
 	tx5.Outputs[0].Amount = 10
@@ -447,20 +449,20 @@ func TestCreateAccountPermission(t *testing.T) {
 	require.Error(t, err)
 
 	// A single input, having the call permission, but the contract doesn't have only call permission
-	_, caller2Addr := makeContractAccount(t, contractCode, 0, ptypes.Call)
+	_, caller2Addr := makeContractAccount(t, contractCode, 0, permission.Call)
 	tx8 := makeCallTx(t, "carol", &caller2Addr, nil, 100)
 	_, err = execTxWaitAccountCall(t, tx8, "carol", caller2Addr)
 	require.Error(t, err)
 
 	// A single input, having the call permission, but the contract doesn't have call and create account permissions
-	_, caller3Addr := makeContractAccount(t, contractCode, 0, ptypes.Call|ptypes.CreateAccount)
+	_, caller3Addr := makeContractAccount(t, contractCode, 0, permission.Call|permission.CreateAccount)
 	tx9 := makeCallTx(t, "carol", &caller3Addr, nil, 100)
 	_, err = execTxWaitAccountCall(t, tx9, "carol", caller3Addr)
 	require.Error(t, err)
 
 	// Both input and contract have call and create account permissions
-	setPermissions(t, "carol", ptypes.Call|ptypes.CreateAccount)
-	_, caller4Addr := makeContractAccount(t, contractCode, 0, ptypes.Call|ptypes.CreateAccount)
+	setPermissions(t, "carol", permission.Call|permission.CreateAccount)
+	_, caller4Addr := makeContractAccount(t, contractCode, 0, permission.Call|permission.CreateAccount)
 	tx10 := makeCallTx(t, "carol", &caller4Addr, nil, 100)
 	_, err = execTxWaitAccountCall(t, tx10, "carol", caller4Addr)
 	require.NoError(t, err)
@@ -474,7 +476,7 @@ func TestCreateAccountPermission(t *testing.T) {
 
 // Test creating a contract from futher down the call stack
 func TestStackOverflow(t *testing.T) {
-	setPermissions(t, "alice", ptypes.Call|ptypes.CreateAccount)
+	setPermissions(t, "alice", permission.Call|permission.CreateAccount)
 
 	/*
 	   contract Factory {
@@ -499,8 +501,8 @@ func TestStackOverflow(t *testing.T) {
 	factoryCode, _ := hex.DecodeString("60606040526000357C010000000000000000000000000000000000000000000000000000000090048063EFC81A8C146037576035565B005B60426004805050606E565B604051808273FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF16815260200191505060405180910390F35B6000604051610153806100E0833901809050604051809103906000F0600060006101000A81548173FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF02191690830217905550600060009054906101000A900473FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF16905060DD565B90566060604052610141806100126000396000F360606040526000357C0100000000000000000000000000000000000000000000000000000000900480639ED933181461003957610037565B005B61004F600480803590602001909190505061007B565B604051808273FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF16815260200191505060405180910390F35B60008173FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF1663EFC81A8C604051817C01000000000000000000000000000000000000000000000000000000000281526004018090506020604051808303816000876161DA5A03F1156100025750505060405180519060200150600060006101000A81548173FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF02191690830217905550600060009054906101000A900473FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF16905061013C565B91905056")
 	createData, _ := hex.DecodeString("9ed93318")
 
-	_, preFactoryAddr := makeContractAccount(t, preFactoryCode, 0, ptypes.Call)
-	_, factoryAddr := makeContractAccount(t, factoryCode, 0, ptypes.Call)
+	_, preFactoryAddr := makeContractAccount(t, preFactoryCode, 0, permission.Call)
+	_, factoryAddr := makeContractAccount(t, factoryCode, 0, permission.Call)
 
 	createData = append(createData, factoryAddr.Word256().Bytes()...)
 
@@ -522,7 +524,7 @@ func TestContractSend(t *testing.T) {
 	sendData, _ := hex.DecodeString("3e58c58c")
 
 	_, caller1Addr := makeContractAccount(t, callerCode, 0, 0)
-	_, caller2Addr := makeContractAccount(t, callerCode, 0, ptypes.Call)
+	_, caller2Addr := makeContractAccount(t, callerCode, 0, permission.Call)
 
 	sendData = append(sendData, accountPool["bob"].Address().Word256().Bytes()...)
 	sendAmt := uint64(10)
@@ -545,7 +547,7 @@ func TestContractSend(t *testing.T) {
 }
 
 func TestSelfDestruct(t *testing.T) {
-	setPermissions(t, "alice", ptypes.Send|ptypes.Call|ptypes.CreateAccount)
+	setPermissions(t, "alice", permission.Send|permission.Call|permission.CreateAccount)
 
 	aliceBalance := getBalance(t, "alice")
 	bobBalance := getBalance(t, "bob")
@@ -594,8 +596,8 @@ func TestTxSequence(t *testing.T) {
 // 	stateDB := dbm.NewDB("state", dbBackend, dbDir)
 // 	defer stateDB.Close()
 // 	genDoc := newBaseGenDoc(permission.ZeroAccountPermissions, permission.ZeroAccountPermissions)
-// 	genDoc.Accounts[0].Permissions.Base.Set(ptypes.Call, true) // give the 0 account permission
-// 	genDoc.Accounts[3].Permissions.Base.Set(ptypes.Bond, true) // some arbitrary permission to play with
+// 	genDoc.Accounts[0].Permissions.Base.Set(permission.Call, true) // give the 0 account permission
+// 	genDoc.Accounts[3].Permissions.Base.Set(permission.Bond, true) // some arbitrary permission to play with
 // 	genDoc.Accounts[3].Permissions.AddRole("bumble")
 // 	genDoc.Accounts[3].Permissions.AddRole("bee")
 // 	st, err := MakeGenesisState(stateDB, &genDoc)
@@ -609,7 +611,7 @@ func TestTxSequence(t *testing.T) {
 
 // 	fmt.Println("\n#### HasBase")
 // 	// HasBase
-// 	snativeAddress, pF, data := snativePermTestInputCALL("hasBase", users[3], ptypes.Bond, false)
+// 	snativeAddress, pF, data := snativePermTestInputCALL("hasBase", users[3], permission.Bond, false)
 // 	testSNativeCALLExpectFail(t, batchCommitter, emitter, doug[0], snativeAddress, data)
 // 	testSNativeCALLExpectPass(t, batchCommitter, emitter, doug[0], pF, snativeAddress, data, func(ret []byte) error {
 // 		// return value should be true or false as a 32 byte array...
@@ -621,10 +623,10 @@ func TestTxSequence(t *testing.T) {
 
 // 	fmt.Println("\n#### SetBase")
 // 	// SetBase
-// 	snativeAddress, pF, data = snativePermTestInputCALL("setBase", users[3], ptypes.Bond, false)
+// 	snativeAddress, pF, data = snativePermTestInputCALL("setBase", users[3], permission.Bond, false)
 // 	testSNativeCALLExpectFail(t, batchCommitter, emitter, doug[0], snativeAddress, data)
 // 	testSNativeCALLExpectPass(t, batchCommitter, emitter, doug[0], pF, snativeAddress, data, func(ret []byte) error { return nil })
-// 	snativeAddress, pF, data = snativePermTestInputCALL("hasBase", users[3], ptypes.Bond, false)
+// 	snativeAddress, pF, data = snativePermTestInputCALL("hasBase", users[3], permission.Bond, false)
 // 	testSNativeCALLExpectPass(t, batchCommitter, emitter, doug[0], pF, snativeAddress, data, func(ret []byte) error {
 // 		// return value should be true or false as a 32 byte array...
 // 		if !IsZeros(ret) {
@@ -632,9 +634,9 @@ func TestTxSequence(t *testing.T) {
 // 		}
 // 		return nil
 // 	})
-// 	snativeAddress, pF, data = snativePermTestInputCALL("setBase", users[3], ptypes.CreateContract, true)
+// 	snativeAddress, pF, data = snativePermTestInputCALL("setBase", users[3], permission.CreateContract, true)
 // 	testSNativeCALLExpectPass(t, batchCommitter, emitter, doug[0], pF, snativeAddress, data, func(ret []byte) error { return nil })
-// 	snativeAddress, pF, data = snativePermTestInputCALL("hasBase", users[3], ptypes.CreateContract, false)
+// 	snativeAddress, pF, data = snativePermTestInputCALL("hasBase", users[3], permission.CreateContract, false)
 // 	testSNativeCALLExpectPass(t, batchCommitter, emitter, doug[0], pF, snativeAddress, data, func(ret []byte) error {
 // 		// return value should be true or false as a 32 byte array...
 // 		if !IsZeros(ret[:31]) || ret[31] != byte(1) {
@@ -645,10 +647,10 @@ func TestTxSequence(t *testing.T) {
 
 // 	fmt.Println("\n#### UnsetBase")
 // 	// UnsetBase
-// 	snativeAddress, pF, data = snativePermTestInputCALL("unsetBase", users[3], ptypes.CreateContract, false)
+// 	snativeAddress, pF, data = snativePermTestInputCALL("unsetBase", users[3], permission.CreateContract, false)
 // 	testSNativeCALLExpectFail(t, batchCommitter, emitter, doug[0], snativeAddress, data)
 // 	testSNativeCALLExpectPass(t, batchCommitter, emitter, doug[0], pF, snativeAddress, data, func(ret []byte) error { return nil })
-// 	snativeAddress, pF, data = snativePermTestInputCALL("hasBase", users[3], ptypes.CreateContract, false)
+// 	snativeAddress, pF, data = snativePermTestInputCALL("hasBase", users[3], permission.CreateContract, false)
 // 	testSNativeCALLExpectPass(t, batchCommitter, emitter, doug[0], pF, snativeAddress, data, func(ret []byte) error {
 // 		if !IsZeros(ret) {
 // 			return fmt.Errorf("Expected 0. Got %X", ret)
@@ -658,10 +660,10 @@ func TestTxSequence(t *testing.T) {
 
 // 	fmt.Println("\n#### SetGlobal")
 // 	// SetGlobalPerm
-// 	snativeAddress, pF, data = snativePermTestInputCALL("setGlobal", users[3], ptypes.CreateContract, true)
+// 	snativeAddress, pF, data = snativePermTestInputCALL("setGlobal", users[3], permission.CreateContract, true)
 // 	testSNativeCALLExpectFail(t, batchCommitter, emitter, doug[0], snativeAddress, data)
 // 	testSNativeCALLExpectPass(t, batchCommitter, emitter, doug[0], pF, snativeAddress, data, func(ret []byte) error { return nil })
-// 	snativeAddress, pF, data = snativePermTestInputCALL("hasBase", users[3], ptypes.CreateContract, false)
+// 	snativeAddress, pF, data = snativePermTestInputCALL("hasBase", users[3], permission.CreateContract, false)
 // 	testSNativeCALLExpectPass(t, batchCommitter, emitter, doug[0], pF, snativeAddress, data, func(ret []byte) error {
 // 		// return value should be true or false as a 32 byte array...
 // 		if !IsZeros(ret[:31]) || ret[31] != byte(1) {
@@ -719,8 +721,8 @@ func TestTxSequence(t *testing.T) {
 // 	stateDB := dbm.NewDB("state", dbBackend, dbDir)
 // 	defer stateDB.Close()
 // 	genDoc := newBaseGenDoc(permission.ZeroAccountPermissions, permission.ZeroAccountPermissions)
-// 	genDoc.Accounts[0].Permissions.Base.Set(ptypes.Call, true) // give the 0 account permission
-// 	genDoc.Accounts[3].Permissions.Base.Set(ptypes.Bond, true) // some arbitrary permission to play with
+// 	genDoc.Accounts[0].Permissions.Base.Set(permission.Call, true) // give the 0 account permission
+// 	genDoc.Accounts[3].Permissions.Base.Set(permission.Bond, true) // some arbitrary permission to play with
 // 	genDoc.Accounts[3].Permissions.AddRole("bumble")
 // 	genDoc.Accounts[3].Permissions.AddRole("bee")
 // 	st, err := MakeGenesisState(stateDB, &genDoc)
@@ -732,37 +734,37 @@ func TestTxSequence(t *testing.T) {
 
 // 	fmt.Println("\n#### SetBase")
 // 	// SetBase
-// 	snativeArgs := snativePermTestInputTx("setBase", users[3], ptypes.Bond, false)
+// 	snativeArgs := snativePermTestInputTx("setBase", users[3], permission.Bond, false)
 // 	testSNativeTxExpectFail(t, batchCommitter, snativeArgs)
-// 	testSNativeTxExpectPass(t, batchCommitter, ptypes.SetBase, snativeArgs)
+// 	testSNativeTxExpectPass(t, batchCommitter, permission.SetBase, snativeArgs)
 // 	acc := getAccount(batchCommitter.stateCache, users[3].Address())
-// 	if v, _ := acc.MutablePermissions().Base.Get(ptypes.Bond); v {
+// 	if v, _ := acc.MutablePermissions().Base.Get(permission.Bond); v {
 // 		t.Fatal("expected permission to be set false")
 // 	}
-// 	snativeArgs = snativePermTestInputTx("setBase", users[3], ptypes.CreateContract, true)
-// 	testSNativeTxExpectPass(t, batchCommitter, ptypes.SetBase, snativeArgs)
+// 	snativeArgs = snativePermTestInputTx("setBase", users[3], permission.CreateContract, true)
+// 	testSNativeTxExpectPass(t, batchCommitter, permission.SetBase, snativeArgs)
 // 	acc = getAccount(batchCommitter.stateCache, users[3].Address())
-// 	if v, _ := acc.MutablePermissions().Base.Get(ptypes.CreateContract); !v {
+// 	if v, _ := acc.MutablePermissions().Base.Get(permission.CreateContract); !v {
 // 		t.Fatal("expected permission to be set true")
 // 	}
 
 // 	fmt.Println("\n#### UnsetBase")
 // 	// UnsetBase
-// 	snativeArgs = snativePermTestInputTx("unsetBase", users[3], ptypes.CreateContract, false)
+// 	snativeArgs = snativePermTestInputTx("unsetBase", users[3], permission.CreateContract, false)
 // 	testSNativeTxExpectFail(t, batchCommitter, snativeArgs)
-// 	testSNativeTxExpectPass(t, batchCommitter, ptypes.UnsetBase, snativeArgs)
+// 	testSNativeTxExpectPass(t, batchCommitter, permission.UnsetBase, snativeArgs)
 // 	acc = getAccount(batchCommitter.stateCache, users[3].Address())
-// 	if v, _ := acc.MutablePermissions().Base.Get(ptypes.CreateContract); v {
+// 	if v, _ := acc.MutablePermissions().Base.Get(permission.CreateContract); v {
 // 		t.Fatal("expected permission to be set false")
 // 	}
 
 // 	fmt.Println("\n#### SetGlobal")
 // 	// SetGlobalPerm
-// 	snativeArgs = snativePermTestInputTx("setGlobal", users[3], ptypes.CreateContract, true)
+// 	snativeArgs = snativePermTestInputTx("setGlobal", users[3], permission.CreateContract, true)
 // 	testSNativeTxExpectFail(t, batchCommitter, snativeArgs)
-// 	testSNativeTxExpectPass(t, batchCommitter, ptypes.SetGlobal, snativeArgs)
+// 	testSNativeTxExpectPass(t, batchCommitter, permission.SetGlobal, snativeArgs)
 // 	acc = getAccount(batchCommitter.stateCache, acm.GlobalPermissionsAddress)
-// 	if v, _ := acc.MutablePermissions().Base.Get(ptypes.CreateContract); !v {
+// 	if v, _ := acc.MutablePermissions().Base.Get(permission.CreateContract); !v {
 // 		t.Fatal("expected permission to be set true")
 // 	}
 
@@ -770,7 +772,7 @@ func TestTxSequence(t *testing.T) {
 // 	// AddRole
 // 	snativeArgs = snativeRoleTestInputTx("addRole", users[3], "chuck")
 // 	testSNativeTxExpectFail(t, batchCommitter, snativeArgs)
-// 	testSNativeTxExpectPass(t, batchCommitter, ptypes.AddRole, snativeArgs)
+// 	testSNativeTxExpectPass(t, batchCommitter, permission.AddRole, snativeArgs)
 // 	acc = getAccount(batchCommitter.stateCache, users[3].Address())
 // 	if v := acc.Permissions().HasRole("chuck"); !v {
 // 		t.Fatal("expected role to be added")
@@ -780,7 +782,7 @@ func TestTxSequence(t *testing.T) {
 // 	// RemoveRole
 // 	snativeArgs = snativeRoleTestInputTx("removeRole", users[3], "chuck")
 // 	testSNativeTxExpectFail(t, batchCommitter, snativeArgs)
-// 	testSNativeTxExpectPass(t, batchCommitter, ptypes.RemoveRole, snativeArgs)
+// 	testSNativeTxExpectPass(t, batchCommitter, permission.RemoveRole, snativeArgs)
 // 	acc = getAccount(batchCommitter.stateCache, users[3].Address())
 // 	if v := acc.Permissions().HasRole("chuck"); v {
 // 		t.Fatal("expected role to be removed")
@@ -1187,13 +1189,13 @@ func TestTxSequence(t *testing.T) {
 // }
 
 // // give a contract perms for an snative, call it, it calls the snative, ensure the check funciton (f) succeeds
-// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func testSNativeCALLExpectPass(t *testing.T, batchCommitter *executor, emitter event.Emitter, doug *acm.Account, snativePerm ptypes.PermFlag,
+// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func testSNativeCALLExpectPass(t *testing.T, batchCommitter *executor, emitter event.Emitter, doug *acm.Account, snativePerm permission.PermFlag,
 // 	snativeAddress crypto.Address, data []byte, f func([]byte) error) {
 // 	testSNativeCALL(t, true, batchCommitter, emitter, doug, snativePerm, snativeAddress, data, f)
 // }
 
 // %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func testSNativeCALL(t *testing.T, expectPass bool, batchCommitter *executor, emitter event.Emitter, doug *acm.Account,
-// 	snativePerm ptypes.PermFlag, snativeAddress crypto.Address, data []byte, f func([]byte) error) {
+// 	snativePerm permission.PermFlag, snativeAddress crypto.Address, data []byte, f func([]byte) error) {
 // 	if expectPass {
 // 		doug.MutablePermissions().Base.Set(snativePerm, true)
 // 	}
@@ -1225,12 +1227,12 @@ func TestTxSequence(t *testing.T) {
 // 	testSNativeTx(t, false, batchCommitter, 0, snativeArgs)
 // }
 
-// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func testSNativeTxExpectPass(t *testing.T, batchCommitter *executor, perm ptypes.PermFlag,
+// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func testSNativeTxExpectPass(t *testing.T, batchCommitter *executor, perm permission.PermFlag,
 // 	snativeArgs snatives.PermArgs) {
 // 	testSNativeTx(t, true, batchCommitter, perm, snativeArgs)
 // }
 
-// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func testSNativeTx(t *testing.T, expectPass bool, batchCommitter *executor, perm ptypes.PermFlag,
+// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func testSNativeTx(t *testing.T, expectPass bool, batchCommitter *executor, perm permission.PermFlag,
 // 	snativeArgs snatives.PermArgs) {
 // 	if expectPass {
 // 		acc := getAccount(batchCommitter.stateCache, users[0].Address())
@@ -1271,8 +1273,8 @@ func TestTxSequence(t *testing.T) {
 // 	return id[:]
 // }
 
-// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func snativePermTestInputCALL(name string, user acm.AddressableSigner, perm ptypes.PermFlag,
-// 	val bool) (addr crypto.Address, pF ptypes.PermFlag, data []byte) {
+// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func snativePermTestInputCALL(name string, user acm.AddressableSigner, perm permission.PermFlag,
+// 	val bool) (addr crypto.Address, pF permission.PermFlag, data []byte) {
 // 	addr = permissionsContract.Address()
 // 	switch name {
 // 	case "hasBase", "unsetBase":
@@ -1288,13 +1290,13 @@ func TestTxSequence(t *testing.T) {
 // 	}
 // 	data = append(permNameToFuncID(name), data...)
 // 	var err error
-// 	if pF, err = ptypes.PermStringToFlag(name); err != nil {
+// 	if pF, err = permission.PermStringToFlag(name); err != nil {
 // 		panic(fmt.Sprintf("failed to convert perm string (%s) to flag", name))
 // 	}
 // 	return
 // }
 
-// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func snativePermTestInputTx(name string, user acm.AddressableSigner, perm ptypes.PermFlag,
+// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func snativePermTestInputTx(name string, user acm.AddressableSigner, perm permission.PermFlag,
 // 	val bool) (snativeArgs snatives.PermArgs) {
 
 // 	switch name {
@@ -1311,14 +1313,14 @@ func TestTxSequence(t *testing.T) {
 // }
 
 // %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% func snativeRoleTestInputCALL(name string, user acm.AddressableSigner,
-// 	role string) (addr crypto.Address, pF ptypes.PermFlag, data []byte) {
+// 	role string) (addr crypto.Address, pF permission.PermFlag, data []byte) {
 // 	addr = permissionsContract.Address()
 // 	data = user.Address().Word256().Bytes()
 // 	data = append(data, RightPadBytes([]byte(role), 32)...)
 // 	data = append(permNameToFuncID(name), data...)
 
 // 	var err error
-// 	if pF, err = ptypes.PermStringToFlag(name); err != nil {
+// 	if pF, err = permission.PermStringToFlag(name); err != nil {
 // 		panic(fmt.Sprintf("failed to convert perm string (%s) to flag", name))
 // 	}
 // 	return

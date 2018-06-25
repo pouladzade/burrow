@@ -4,7 +4,7 @@ import (
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/binary"
 	"github.com/hyperledger/burrow/crypto"
-	ptypes "github.com/hyperledger/burrow/permission/types"
+	"github.com/hyperledger/burrow/permission"
 )
 
 type AccountGetter interface {
@@ -98,11 +98,9 @@ func GlobalPermissionsAccount(getter AccountGetter) *acm.Account {
 }
 
 // Get global permissions from the account at GlobalPermissionsAddress
-func GlobalAccountPermissions(getter AccountGetter) ptypes.AccountPermissions {
+func GlobalAccountPermissions(getter AccountGetter) permission.Permissions {
 	if getter == nil {
-		return ptypes.AccountPermissions{
-			Roles: []string{},
-		}
+		return permission.ZeroAccountPermissions
 	}
 	return GlobalPermissionsAccount(getter).Permissions()
 }

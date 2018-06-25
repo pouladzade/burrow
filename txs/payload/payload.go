@@ -32,7 +32,6 @@ const (
 
 	// Admin transactions
 	TypePermissions = Type(0x21)
-	TypeGovernance  = Type(0x22)
 )
 
 var nameFromType = map[Type]string{
@@ -43,7 +42,6 @@ var nameFromType = map[Type]string{
 	TypeBond:        "BondTx",
 	TypeUnbond:      "UnbondTx",
 	TypePermissions: "PermissionsTx",
-	TypeGovernance:  "GovernanceTx",
 }
 
 var typeFromName = make(map[string]Type)

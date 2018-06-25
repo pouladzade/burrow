@@ -20,7 +20,7 @@ import (
 
 	"github.com/hyperledger/burrow/binary"
 	"github.com/hyperledger/burrow/crypto"
-	ptypes "github.com/hyperledger/burrow/permission/types"
+	"github.com/hyperledger/burrow/permission"
 	"github.com/tendermint/go-amino"
 )
 
@@ -45,11 +45,11 @@ type accountData struct {
 	Balance     uint64
 	Code        Bytecode
 	StorageRoot []byte
-	Permissions ptypes.AccountPermissions
+	Permissions permission.Permissions
 }
 
 ///---- Constructors
-func NewAccount(pubKey crypto.PublicKey, permissions ptypes.AccountPermissions) *Account {
+func NewAccount(pubKey crypto.PublicKey, permissions permission.Permissions) *Account {
 	return &Account{
 		data: accountData{
 			Address:     pubKey.Address(),
@@ -59,7 +59,7 @@ func NewAccount(pubKey crypto.PublicKey, permissions ptypes.AccountPermissions) 
 	}
 }
 
-func NewContractAccount(address crypto.Address, permissions ptypes.AccountPermissions) *Account {
+func NewContractAccount(address crypto.Address, permissions permission.Permissions) *Account {
 	return &Account{
 		data: accountData{
 			Address:     address,
@@ -70,24 +70,28 @@ func NewContractAccount(address crypto.Address, permissions ptypes.AccountPermis
 }
 
 /// For tests
-func NewAccountFromSecret(secret string, permissions ptypes.AccountPermissions) *Account {
+func NewAccountFromSecret(secret string, permissions permission.Permissions) *Account {
 	return NewAccount(crypto.PrivateKeyFromSecret(secret, crypto.CurveTypeEd25519).GetPublicKey(),
 		permissions)
 }
 
-func NewContractAccountFromSecret(secret string, permissions ptypes.AccountPermissions) *Account {
+func NewContractAccountFromSecret(secret string, permissions permission.Permissions) *Account {
 	addr := crypto.NewContractAddress(crypto.PrivateKeyFromSecret(secret, crypto.CurveTypeEd25519).GetPublicKey().Address(), 1)
 	return NewContractAccount(addr, permissions)
 }
 
 ///---- Getter methods
-func (acc Account) Address() crypto.Address                { return acc.data.Address }
-func (acc Account) PublicKey() crypto.PublicKey            { return acc.data.PublicKey }
-func (acc Account) Balance() uint64                        { return acc.data.Balance }
-func (acc Account) Code() Bytecode                         { return acc.data.Code }
-func (acc Account) Sequence() uint64                       { return acc.data.Sequence }
-func (acc Account) StorageRoot() []byte                    { return acc.data.StorageRoot }
-func (acc Account) Permissions() ptypes.AccountPermissions { return acc.data.Permissions }
+func (acc Account) Address() crypto.Address             { return acc.data.Address }
+func (acc Account) PublicKey() crypto.PublicKey         { return acc.data.PublicKey }
+func (acc Account) Balance() uint64                     { return acc.data.Balance }
+func (acc Account) Code() Bytecode                      { return acc.data.Code }
+func (acc Account) Sequence() uint64                    { return acc.data.Sequence }
+func (acc Account) StorageRoot() []byte                 { return acc.data.StorageRoot }
+func (acc Account) Permissions() permission.Permissions { return acc.data.Permissions }
+
+func (acc Account) HasPermissions(permissions permission.Permissions) bool {
+	return acc.data.Permissions.IsSet(permissions)
+}
 
 ///---- Mutable methods
 func (acc *Account) SubtractFromBalance(amount uint64) error {
@@ -122,13 +126,22 @@ func (acc *Account) SetStorageRoot(storageRoot []byte) error {
 	return nil
 }
 
-func (acc *Account) SetPermissions(permissions ptypes.AccountPermissions) error {
-	acc.data.Permissions = permissions
-	return nil
+func (acc *Account) SetPermissions(permissions permission.Permissions) (error, permission.Permissions) {
+	if err := permissions.EnsureValid(); err != nil {
+		return err, acc.Permissions()
+	}
+
+	acc.data.Permissions.Set(permissions)
+	return nil, acc.Permissions()
 }
 
-func (acc *Account) MutablePermissions() *ptypes.AccountPermissions {
-	return &acc.data.Permissions
+func (acc *Account) UnsetPermissions(permissions permission.Permissions) (error, permission.Permissions) {
+	if err := permissions.EnsureValid(); err != nil {
+		return err, acc.Permissions()
+	}
+
+	acc.data.Permissions.Unset(permissions)
+	return nil, acc.Permissions()
 }
 
 ///---- Serialisation methods
@@ -161,6 +174,6 @@ func (acc *Account) UnmarshalJSON(bytes []byte) error {
 }
 
 func (acc Account) String() string {
-	return fmt.Sprintf("Account{Address: %s; Sequence: %v; PublicKey: %v Balance: %v; CodeBytes: %v; StorageRoot: 0x%X; Permissions: %s}",
+	return fmt.Sprintf("Account{Address: %s; Sequence: %v; PublicKey: %v Balance: %v; CodeBytes: %v; StorageRoot: 0x%X; Permissions: %v}",
 		acc.Address(), acc.Sequence(), acc.PublicKey(), acc.Balance(), len(acc.Code()), acc.StorageRoot(), acc.Permissions())
 }

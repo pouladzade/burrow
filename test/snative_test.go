@@ -26,7 +26,7 @@ import (
 	"github.com/hyperledger/burrow/execution/evm/abi"
 	"github.com/hyperledger/burrow/execution/evm/asm/bc"
 	"github.com/hyperledger/burrow/execution/evm/sha3"
-	ptypes "github.com/hyperledger/burrow/permission/types"
+	"github.com/hyperledger/burrow/permission"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -36,13 +36,9 @@ import (
 // yields:
 // Keep this updated to drive TestPermissionsContractSignatures
 const compiledSigs = `
-a73f7f8a addRole(address,bytes32)
-225b6574 hasBase(address,uint64)
-ac4ab3fb hasRole(address,bytes32)
-6853920e removeRole(address,bytes32)
-dbd4a8ea setBase(address,uint64,bool)
-c4bc7b70 setGlobal(uint64,bool)
-b7d4dc0d unsetBase(address,uint64)
+4670dc12 hasPermissions(address,uint64)
+ccc2936e setPermissions(address,uint64)
+30f69812 unsetPermissions(address,uint64)
 `
 
 func TestPermissionsContractSignatures(t *testing.T) {
@@ -67,7 +63,7 @@ func TestSNativeContractDescription_Dispatch(t *testing.T) {
 	caller := getAccount(t, "alice")
 	grantee := getAccount(t, "bob")
 
-	function, err := contract.FunctionByName("addRole")
+	function, err := contract.FunctionByName("hasPermissions")
 	if err != nil {
 		t.Fatalf("Could not get function: %s", err)
 	}
@@ -75,16 +71,16 @@ func TestSNativeContractDescription_Dispatch(t *testing.T) {
 
 	// Should fail since we have no permissions
 	retValue, err := contract.Dispatch(bc1State, caller, bc.MustSplice(funcID[:],
-		grantee.Address(), permFlagToWord256(ptypes.CreateAccount)), &defaultGas, nopLogger)
+		grantee.Address(), permissionsToWord256(permission.CreateAccount)), &defaultGas, nopLogger)
 	if !assert.Error(t, err, "Should fail due to lack of permissions") {
 		return
 	}
 	assert.IsType(t, err, errors.LacksSNativePermission{})
 
 	// Grant all permissions and dispatch should success
-	caller.SetPermissions(allAccountPermissions())
+	caller.SetPermissions(permission.AllAccountPermissions)
 	retValue, err = contract.Dispatch(bc1State, caller, bc.MustSplice(funcID[:],
-		grantee.Address().Word256(), permFlagToWord256(ptypes.CreateAccount)), &defaultGas, nopLogger)
+		grantee.Address().Word256(), permissionsToWord256(permission.CreateAccount)), &defaultGas, nopLogger)
 	assert.NoError(t, err)
 	assert.Equal(t, retValue, LeftPadBytes([]byte{1}, 32))
 }
@@ -119,18 +115,8 @@ func funcIDFromHex(t *testing.T, hexString string) abi.FunctionSelector {
 	return abi.FirstFourBytes(bs)
 }
 
-func permFlagToWord256(permFlag ptypes.PermFlag) Word256 {
-	return Uint64ToWord256(uint64(permFlag))
-}
-
-func allAccountPermissions() ptypes.AccountPermissions {
-	return ptypes.AccountPermissions{
-		Base: ptypes.BasePermissions{
-			Perms:  ptypes.AllPermFlags,
-			SetBit: ptypes.AllPermFlags,
-		},
-		Roles: []string{},
-	}
+func permissionsToWord256(permissions permission.Permissions) Word256 {
+	return Uint64ToWord256(uint64(permissions))
 }
 
 // turns the solidity compiler function summary into a map to drive signature

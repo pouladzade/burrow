@@ -12,6 +12,7 @@ import (
 	"github.com/hyperledger/burrow/logging/structure"
 	"github.com/hyperledger/burrow/txs"
 	"github.com/hyperledger/burrow/txs/payload"
+	"github.com/hyperledger/burrow/util"
 )
 
 type NameContext struct {
@@ -40,7 +41,7 @@ func (ctx *NameContext) Execute(txEnv *txs.Envelope) error {
 		return payload.ErrTxInvalidAddress
 	}
 	// check permission
-	if !hasNamePermission(ctx.StateWriter, inAcc, ctx.Logger) {
+	if !util.HasNamePermission(ctx.StateWriter, inAcc) {
 		return fmt.Errorf("account %s does not have Name permission", ctx.tx.Input.Address)
 	}
 	err = validateInput(inAcc, ctx.tx.Input)

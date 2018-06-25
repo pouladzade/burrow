@@ -24,7 +24,7 @@ import (
 
 func TestSNativeFuncTemplate(t *testing.T) {
 	contract := evm.SNativeContracts()["Permissions"]
-	function, err := contract.FunctionByName("removeRole")
+	function, err := contract.FunctionByName("unsetPermissions")
 	if err != nil {
 		t.Fatal("Couldn't get function")
 	}

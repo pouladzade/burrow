@@ -22,8 +22,6 @@ import (
 	"github.com/hyperledger/burrow/client"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/keys"
-	"github.com/hyperledger/burrow/permission/snatives"
-	ptypes "github.com/hyperledger/burrow/permission/types"
 	"github.com/hyperledger/burrow/txs"
 	"github.com/hyperledger/burrow/txs/payload"
 )
@@ -107,55 +105,7 @@ func Name(nodeClient client.NodeClient, keyClient keys.KeyClient, pubkey, addr, 
 func Permissions(nodeClient client.NodeClient, keyClient keys.KeyClient, pubkey, addrS, sequenceS string,
 	action, target, permissionFlag, role, value string) (*payload.PermissionsTx, error) {
 
-	pub, _, sequence, err := checkCommon(nodeClient, keyClient, pubkey, addrS, "0", sequenceS)
-	if err != nil {
-		return nil, err
-	}
-	permFlag, err := ptypes.PermStringToFlag(action)
-	if err != nil {
-		return nil, fmt.Errorf("could not convert action '%s' to PermFlag: %v", action, err)
-	}
-	permArgs := snatives.PermArgs{
-		PermFlag: permFlag,
-	}
-
-	// Try and set each PermArg field for which a string has been provided we'll validate afterwards
-	if target != "" {
-		address, err := crypto.AddressFromHexString(target)
-		if err != nil {
-			return nil, err
-		}
-		permArgs.Address = &address
-	}
-
-	if value != "" {
-		valueBool := value == "true"
-		permArgs.Value = &valueBool
-		if !valueBool && value != "false" {
-			return nil, fmt.Errorf("did not recognise value %s as boolean, use 'true' or 'false'", value)
-		}
-		permArgs.Value = &valueBool
-	}
-
-	if permissionFlag != "" {
-		permission, err := ptypes.PermStringToFlag(permissionFlag)
-		if err != nil {
-			return nil, err
-		}
-		permArgs.Permission = &permission
-	}
-
-	if role != "" {
-		permArgs.Role = &role
-	}
-
-	err = permArgs.EnsureValid()
-	if err != nil {
-		return nil, err
-	}
-
-	tx := payload.NewPermissionsTxWithSequence(pub, permArgs, sequence)
-	return tx, nil
+	return nil, nil
 }
 
 func Bond(nodeClient client.NodeClient, keyClient keys.KeyClient, pubkey, unbondAddr, amtS, sequenceS string) (*payload.BondTx, error) {

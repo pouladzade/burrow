@@ -8,7 +8,6 @@ import (
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/execution/evm"
 	"github.com/hyperledger/burrow/permission"
-	ptypes "github.com/hyperledger/burrow/permission/types"
 )
 
 func setupAccountPool(m *testing.M) {
@@ -30,8 +29,8 @@ func setupAccountPool(m *testing.M) {
 	}
 }
 
-func makeAccount(t *testing.T, balance uint64, permissions ptypes.PermFlag) (*acm.Account, crypto.Address) {
-	account := acm.NewAccount(generateNewPublicKey(t), permission.DefaultAccountPermissions)
+func makeAccount(t *testing.T, balance uint64, permissions permission.Permissions) (*acm.Account, crypto.Address) {
+	account := acm.NewAccount(generateNewPublicKey(t), permissions)
 	account.AddToBalance(balance)
 	updateAccount(t, account)
 	commit(t)
@@ -39,11 +38,9 @@ func makeAccount(t *testing.T, balance uint64, permissions ptypes.PermFlag) (*ac
 	return account, account.Address()
 }
 
-func makeContractAccount(t *testing.T, code []byte, balance uint64, permissions ptypes.PermFlag) (*acm.Account, crypto.Address) {
+func makeContractAccount(t *testing.T, code []byte, balance uint64, permissions permission.Permissions) (*acm.Account, crypto.Address) {
 	deriveFrom := getAccount(t, "b00f")
-	contractAcc := evm.DeriveNewAccount(deriveFrom, permission.ZeroAccountPermissions, nopLogger)
-	contractAcc.MutablePermissions().Base.Perms = permissions
-	contractAcc.MutablePermissions().Base.SetBit = permissions
+	contractAcc := evm.DeriveNewAccount(deriveFrom, permissions, nopLogger)
 	contractAcc.SetCode(code)
 	contractAcc.AddToBalance(balance)
 	updateAccount(t, contractAcc)

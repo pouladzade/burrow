@@ -15,6 +15,7 @@ import (
 	"github.com/hyperledger/burrow/logging/structure"
 	"github.com/hyperledger/burrow/txs"
 	"github.com/hyperledger/burrow/txs/payload"
+	"github.com/hyperledger/burrow/util"
 )
 
 // TODO: make configurable
@@ -95,11 +96,11 @@ func (ctx *CallContext) Precheck() (*acm.Account, *acm.Account, error) {
 	createContract := ctx.tx.Address == nil
 
 	if createContract {
-		if !hasCreateContractPermission(ctx.StateWriter, inAcc, ctx.Logger) {
+		if !util.HasCreateContractPermission(ctx.StateWriter, inAcc) {
 			return nil, nil, fmt.Errorf("account %s does not have CreateContract permission", ctx.tx.Input.Address)
 		}
 	} else {
-		if !hasCallPermission(ctx.StateWriter, inAcc, ctx.Logger) {
+		if !util.HasCallPermission(ctx.StateWriter, inAcc) {
 			return nil, nil, fmt.Errorf("account %s does not have Call permission", ctx.tx.Input.Address)
 		}
 		// check if its a native contract

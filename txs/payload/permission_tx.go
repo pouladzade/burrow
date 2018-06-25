@@ -3,41 +3,28 @@ package payload
 import (
 	"fmt"
 
-	"github.com/hyperledger/burrow/account/state"
 	"github.com/hyperledger/burrow/crypto"
-	"github.com/hyperledger/burrow/permission/snatives"
+	"github.com/hyperledger/burrow/permission"
 )
 
 type PermissionsTx struct {
-	Input    *TxInput
-	PermArgs snatives.PermArgs
+	Modifier    TxInput                `json:"modifier"`
+	Modified    crypto.Address         `json:"modified"`
+	Permissions permission.Permissions `json:"permissions"`
+	Set         bool                   `json:"set"`
 }
 
-func NewPermissionsTx(st state.AccountGetter, from crypto.PublicKey, args snatives.PermArgs) (*PermissionsTx, error) {
-	addr := from.Address()
-	acc, err := st.GetAccount(addr)
-	if err != nil {
-		return nil, err
-	}
-	if acc == nil {
-		return nil, fmt.Errorf("Invalid address %s from pubkey %s", addr, from)
-	}
-
-	sequence := acc.Sequence() + 1
-	return NewPermissionsTxWithSequence(from, args, sequence), nil
-}
-
-func NewPermissionsTxWithSequence(from crypto.PublicKey, args snatives.PermArgs, sequence uint64) *PermissionsTx {
-	input := &TxInput{
-		Address:  from.Address(),
-		Amount:   1, // NOTE: amounts can't be 0 ...
-		Sequence: sequence,
-	}
-
+func NewPermissionsTx(modifier, modified crypto.Address, permission permission.Permissions, set bool, sequence uint64, fee uint64) (*PermissionsTx, error) {
 	return &PermissionsTx{
-		Input:    input,
-		PermArgs: args,
-	}
+		Modifier: TxInput{
+			Address:  modifier,
+			Amount:   fee,
+			Sequence: sequence,
+		},
+		Modified:    modified,
+		Permissions: permission,
+		Set:         set,
+	}, nil
 }
 
 func (tx *PermissionsTx) Type() Type {
@@ -45,9 +32,9 @@ func (tx *PermissionsTx) Type() Type {
 }
 
 func (tx *PermissionsTx) GetInputs() []*TxInput {
-	return []*TxInput{tx.Input}
+	return []*TxInput{&tx.Modifier}
 }
 
 func (tx *PermissionsTx) String() string {
-	return fmt.Sprintf("PermissionsTx{%v -> %v}", tx.Input, tx.PermArgs)
+	return fmt.Sprintf("PermissionsTx{%v -> %v (%v,%v)}", tx.Modifier, tx.Modified, tx.Permissions, tx.Set)
 }

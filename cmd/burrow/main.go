@@ -29,13 +29,6 @@ func burrow(output commands.Output) *cli.Cli {
 	app.Command("start", "Start a Burrow node",
 		commands.Start(output))
 
-	app.Command("spec", "Build a GenesisSpec that acts as a template for a GenesisDoc and the configure command",
-		commands.Spec(output))
-
-	app.Command("configure",
-		"Create Burrow configuration by consuming a GenesisDoc or GenesisSpec, creating keys, and emitting the config",
-		commands.Configure(output))
-
 	app.Command("keys", "A tool for doing a bunch of cool stuff with keys",
 		commands.Keys(output))
 

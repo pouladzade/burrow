@@ -28,6 +28,7 @@ import (
 	"github.com/hyperledger/burrow/execution/events/pbevents"
 	"github.com/hyperledger/burrow/execution/names"
 	"github.com/hyperledger/burrow/genesis"
+	"github.com/hyperledger/burrow/permission"
 	"github.com/hyperledger/burrow/txs"
 	"github.com/tendermint/go-amino"
 	consensusTypes "github.com/tendermint/tendermint/consensus/types"
@@ -189,8 +190,7 @@ type AccountHumanReadable struct {
 	Balance     uint64
 	Code        []string
 	StorageRoot string
-	Permissions []string
-	Roles       []string
+	Permissions permission.Permissions
 }
 
 type ResultGetAccountHumanReadable struct {

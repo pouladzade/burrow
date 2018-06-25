@@ -33,7 +33,6 @@ import (
 	. "github.com/hyperledger/burrow/execution/evm/asm/bc"
 	"github.com/hyperledger/burrow/logging"
 	"github.com/hyperledger/burrow/permission"
-	ptypes "github.com/hyperledger/burrow/permission/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +59,7 @@ func newParams() evm.Params {
 
 func callAndCheck(t *testing.T, shoudlFail bool, contractCode []byte, contractBalance uint64, bytecode, input []byte, value, gas uint64) (output []byte, err error) {
 	caller := getAccount(t, "vbuterin")
-	callee, _ := makeContractAccount(t, contractCode, contractBalance, ptypes.DefaultPermFlags)
+	callee, _ := makeContractAccount(t, contractCode, contractBalance, permission.Call)
 
 	start := time.Now()
 	output, err = evm1.Call(evm1Cache, caller, callee, bytecode, input, value, &gas)
@@ -578,8 +577,8 @@ func TestRevert(t *testing.T) {
 // Test sending tokens from a contract to another account
 func TestSendCall(t *testing.T) {
 	// Create accounts
-	account1, _ := makeAccount(t, 0, 0)
-	account2, _ := makeAccount(t, 0, 0)
+	account1, _ := makeAccount(t, 0, permission.Call)
+	account2, _ := makeAccount(t, 0, permission.Call)
 	account3, _ := makeAccount(t, 0, 0)
 
 	// account1 will call account2 which will trigger CALL opcode to account3
@@ -631,7 +630,7 @@ func TestDelegateCallGas(t *testing.T) {
 
 	// Do a simple operation using 1 gas unit
 	code := MustSplice(PUSH1, calleeReturnValue, return1())
-	calleeAccount, calleeAddress := makeContractAccount(t, code, 10000, ptypes.DefaultPermFlags)
+	calleeAccount, calleeAddress := makeContractAccount(t, code, 10000, permission.Call)
 
 	// Here we split up the caller code so we can make a DELEGATE call with
 	// different amounts of gas. The value we sandwich in the middle is the amount
@@ -647,7 +646,7 @@ func TestDelegateCallGas(t *testing.T) {
 		// Give just enough gas to make the DELEGATECALL
 		costBetweenGasAndDelegateCall,
 		callerCodeSuffix)
-	callerAccount, _ := makeContractAccount(t, code, 10000, ptypes.DefaultPermFlags)
+	callerAccount, _ := makeContractAccount(t, code, 10000, permission.ZeroAccountPermissions)
 
 	// Should pass
 	output, err := runVMWaitError(t, callerAccount, calleeAccount, calleeAddress,
@@ -672,8 +671,8 @@ func TestMemoryBounds(t *testing.T) {
 		return evm.NewDynamicMemory(1024, 2048)
 	}
 	ourVM := evm.NewVM(newParams(), crypto.ZeroAddress, nil, nopLogger, evm.MemoryProvider(memoryProvider))
-	caller, _ := makeContractAccount(t, nil, 10000, ptypes.DefaultPermFlags)
-	callee, _ := makeContractAccount(t, nil, 10000, ptypes.DefaultPermFlags)
+	caller, _ := makeContractAccount(t, nil, 10000, permission.ZeroAccountPermissions)
+	callee, _ := makeContractAccount(t, nil, 10000, permission.ZeroAccountPermissions)
 
 	// This attempts to store a value at the memory boundary and return it
 	word := One256
@@ -764,7 +763,7 @@ func TestReturnDataSize(t *testing.T) {
 
 	accountName := "account2addresstests"
 	address, _ := crypto.AddressFromBytes([]byte(accountName)) ///0x6163636F756E7432616464726573737465737473
-	acc := acm.NewContractAccount(address, permission.DefaultAccountPermissions)
+	acc := acm.NewContractAccount(address, permission.Call)
 	acc.SetCode(callcode)
 	evm1Cache.UpdateAccount(acc)
 

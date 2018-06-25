@@ -10,6 +10,7 @@ import (
 	"github.com/hyperledger/burrow/logging"
 	"github.com/hyperledger/burrow/txs"
 	"github.com/hyperledger/burrow/txs/payload"
+	"github.com/hyperledger/burrow/util"
 )
 
 type SendContext struct {
@@ -32,7 +33,7 @@ func (ctx *SendContext) Execute(txEnv *txs.Envelope) error {
 	}
 
 	// ensure all inputs have send permissions
-	if !hasSendPermission(ctx.StateWriter, accounts, ctx.Logger) {
+	if !util.HaveSendPermission(ctx.StateWriter, accounts) {
 		return fmt.Errorf("at least one input lacks permission for SendTx")
 	}
 

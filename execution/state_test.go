@@ -27,7 +27,7 @@ import (
 	"github.com/hyperledger/burrow/execution/events"
 	"github.com/hyperledger/burrow/execution/events/pbevents"
 	"github.com/hyperledger/burrow/execution/evm/sha3"
-	ptypes "github.com/hyperledger/burrow/permission/types"
+	"github.com/hyperledger/burrow/permission"
 	"github.com/hyperledger/burrow/txs"
 	"github.com/hyperledger/burrow/txs/payload"
 	"github.com/stretchr/testify/assert"
@@ -37,13 +37,7 @@ import (
 
 func TestState_UpdateAccount(t *testing.T) {
 	s := NewState(db.NewMemDB())
-
-	perm := ptypes.AccountPermissions{
-		Base: ptypes.BasePermissions{
-			Perms: ptypes.SetGlobal | ptypes.HasRole,
-		},
-	}
-	account := acm.NewAccountFromSecret("Foo", perm)
+	account := acm.NewAccountFromSecret("Foo", permission.InterChainTx|permission.CreateChain)
 	account.AddToBalance(100)
 
 	_, err := s.Update(func(ws Updatable) error {

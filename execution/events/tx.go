@@ -9,7 +9,7 @@ import (
 	"github.com/hyperledger/burrow/event"
 	"github.com/hyperledger/burrow/event/query"
 	"github.com/hyperledger/burrow/execution/errors"
-	ptypes "github.com/hyperledger/burrow/permission/types"
+	"github.com/hyperledger/burrow/permission"
 	"github.com/hyperledger/burrow/txs"
 	"github.com/hyperledger/burrow/txs/payload"
 	"github.com/tmthrgd/go-hex"
@@ -18,9 +18,11 @@ import (
 func EventStringAccountInput(addr crypto.Address) string  { return fmt.Sprintf("Acc/%s/Input", addr) }
 func EventStringAccountOutput(addr crypto.Address) string { return fmt.Sprintf("Acc/%s/Output", addr) }
 func EventStringNameReg(name string) string               { return fmt.Sprintf("NameReg/%s", name) }
-func EventStringPermissions(perm ptypes.PermFlag) string  { return fmt.Sprintf("Permissions/%v", perm) }
-func EventStringBond() string                             { return "Bond" }
-func EventStringUnbond() string                           { return "Unbond" }
+func EventStringPermissions(permissions permission.Permissions) string {
+	return fmt.Sprintf("Permissions/%v", permissions)
+}
+func EventStringBond() string   { return "Bond" }
+func EventStringUnbond() string { return "Unbond" }
 
 // All txs fire EventDataTx, but only CallTx might have Return or Exception
 type EventDataTx struct {
@@ -71,9 +73,9 @@ func PublishPermissions(publisher event.Publisher, height uint64, tx *txs.Tx) er
 	if !ok {
 		return fmt.Errorf("Tx payload must be PermissionsTx to PublishPermissions")
 	}
-	ev := txEvent(height, TypeAccountInput, EventStringPermissions(permTx.PermArgs.PermFlag), tx, nil, nil)
+	ev := txEvent(height, TypeAccountInput, EventStringPermissions(permTx.Permissions), tx, nil, nil)
 	return publisher.Publish(context.Background(), ev, event.CombinedTags{ev.Tags(), event.TagMap{
-		event.PermissionKey: permTx.PermArgs.PermFlag.String(),
+		event.PermissionKey: permTx.Permissions.String(),
 	}})
 }
 

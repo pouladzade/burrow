@@ -7,10 +7,9 @@ import (
 	"github.com/hyperledger/burrow/account/state"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/logging"
-	"github.com/hyperledger/burrow/logging/structure"
 	"github.com/hyperledger/burrow/permission"
-	ptypes "github.com/hyperledger/burrow/permission/types"
 	"github.com/hyperledger/burrow/txs/payload"
+	"github.com/hyperledger/burrow/util"
 )
 
 // The accounts from the TxInputs must either already have
@@ -58,7 +57,7 @@ func getOrMakeOutputs(accountGetter state.AccountGetter, accs map[crypto.Address
 		// output account may be nil (new)
 		if acc == nil {
 			if !checkedCreatePerms {
-				if !hasCreateAccountPermission(accountGetter, accs, logger) {
+				if !util.HaveCreateAccountPermission(accountGetter, accs) {
 					return nil, fmt.Errorf("at least one input does not have permission to create accounts")
 				}
 				checkedCreatePerms = true
@@ -157,89 +156,4 @@ func adjustByOutputs(accs map[crypto.Address]*acm.Account, outs []*payload.TxOut
 		}
 	}
 	return nil
-}
-
-//---------------------------------------------------------------
-
-// Get permission on an account or fall back to global value
-func HasPermission(accountGetter state.AccountGetter, acc *acm.Account, perm ptypes.PermFlag, logger *logging.Logger) bool {
-	if perm > ptypes.AllPermFlags {
-		logger.InfoMsg(
-			fmt.Sprintf("HasPermission called on invalid permission 0b%b (invalid) > 0b%b (maximum) ",
-				perm, ptypes.AllPermFlags),
-			"invalid_permission", perm,
-			"maximum_permission", ptypes.AllPermFlags)
-		return false
-	}
-
-	v, err := acc.Permissions().Base.Compose(state.GlobalAccountPermissions(accountGetter).Base).Get(perm)
-	if err != nil {
-		logger.TraceMsg("Error obtaining permission value (will default to false/deny)",
-			"perm_flag", perm.String(),
-			structure.ErrorKey, err)
-	}
-
-	if v {
-		logger.TraceMsg("Account has permission",
-			"account_address", acc.Address,
-			"perm_flag", perm.String())
-	} else {
-		logger.TraceMsg("Account does not have permission",
-			"account_address", acc.Address,
-			"perm_flag", perm.String())
-	}
-	return v
-}
-
-// TODO: for debug log the failed accounts
-func hasSendPermission(accountGetter state.AccountGetter, accs map[crypto.Address]*acm.Account,
-	logger *logging.Logger) bool {
-	for _, acc := range accs {
-		if !HasPermission(accountGetter, acc, ptypes.Send, logger) {
-			return false
-		}
-	}
-	return true
-}
-
-func hasNamePermission(accountGetter state.AccountGetter, acc *acm.Account,
-	logger *logging.Logger) bool {
-	return HasPermission(accountGetter, acc, ptypes.Name, logger)
-}
-
-func hasCallPermission(accountGetter state.AccountGetter, acc *acm.Account,
-	logger *logging.Logger) bool {
-	return HasPermission(accountGetter, acc, ptypes.Call, logger)
-}
-
-func hasCreateContractPermission(accountGetter state.AccountGetter, acc *acm.Account,
-	logger *logging.Logger) bool {
-	return HasPermission(accountGetter, acc, ptypes.CreateContract, logger)
-}
-
-func hasCreateAccountPermission(accountGetter state.AccountGetter, accs map[crypto.Address]*acm.Account,
-	logger *logging.Logger) bool {
-	for _, acc := range accs {
-		if !HasPermission(accountGetter, acc, ptypes.CreateAccount, logger) {
-			return false
-		}
-	}
-	return true
-}
-
-func hasBondPermission(accountGetter state.AccountGetter, acc *acm.Account,
-	logger *logging.Logger) bool {
-	return HasPermission(accountGetter, acc, ptypes.Bond, logger)
-}
-
-func hasBondOrSendPermission(accountGetter state.AccountGetter, accs map[crypto.Address]*acm.Account,
-	logger *logging.Logger) bool {
-	for _, acc := range accs {
-		if !HasPermission(accountGetter, acc, ptypes.Bond, logger) {
-			if !HasPermission(accountGetter, acc, ptypes.Send, logger) {
-				return false
-			}
-		}
-	}
-	return true
 }

@@ -25,7 +25,6 @@ import (
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/permission"
-	ptypes "github.com/hyperledger/burrow/permission/types"
 )
 
 // How many bytes to take from the front of the GenesisDoc hash to append
@@ -41,7 +40,7 @@ type genAccount struct {
 	PublicKey   crypto.PublicKey
 	Amount      uint64
 	Name        string
-	Permissions ptypes.AccountPermissions
+	Permissions permission.Permissions
 }
 
 type genValidator struct {
@@ -56,7 +55,7 @@ type GenesisDoc struct {
 	GenesisTime       time.Time
 	ChainName         string
 	Salt              []byte `json:",omitempty" toml:",omitempty"`
-	GlobalPermissions ptypes.AccountPermissions
+	GlobalPermissions permission.Permissions
 	MaximumPower      int
 	GenAccounts       []genAccount   `json:"Accounts" toml:"Accounts"`
 	GenValidators     []genValidator `json:"Validators" toml:"Validators"`
@@ -168,7 +167,7 @@ func makeGenesisValidator(validator acm.Validator) genValidator {
 // and a slice of pointers to Validator to construct a GenesisDoc, or returns an error on
 // failure.  In particular MakeGenesisDocFromAccount uses the local time as a
 // timestamp for the GenesisDoc.
-func MakeGenesisDoc(chainName string, salt []byte, genesisTime time.Time, globalPermissions ptypes.AccountPermissions,
+func MakeGenesisDoc(chainName string, salt []byte, genesisTime time.Time, globalPermissions permission.Permissions,
 	names map[crypto.Address]string, accounts []*acm.Account, validators []acm.Validator) *GenesisDoc {
 
 	// Establish deterministic order of accounts by address so we obtain identical GenesisDoc

@@ -21,8 +21,7 @@ import (
 
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/crypto"
-	"github.com/hyperledger/burrow/permission/snatives"
-	ptypes "github.com/hyperledger/burrow/permission/types"
+	"github.com/hyperledger/burrow/permission"
 	"github.com/hyperledger/burrow/txs/payload"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -142,18 +141,19 @@ func TestUnbondTxSignable(t *testing.T) {
 
 func TestPermissionsTxSignable(t *testing.T) {
 	permsTx := &payload.PermissionsTx{
-		Input: &payload.TxInput{
+		Modifier: payload.TxInput{
 			Address:  makePrivateAccount("input1").Address(),
 			Amount:   12345,
 			Sequence: 250,
 		},
-		PermArgs: snatives.SetBaseArgs(makePrivateAccount("address1").Address(), 1, true),
+		Modified:    makePrivateAccount("address1").Address(),
+		Permissions: 1,
+		Set:         true,
 	}
 
 	testTxMarshalJSON(t, permsTx)
 	testTxSignVerify(t, permsTx)
 }
-
 func TestTxWrapper_MarshalJSON(t *testing.T) {
 	toAddress := makePrivateAccount("contract1").Address()
 	callTx := &payload.CallTx{
@@ -172,11 +172,11 @@ func TestTxWrapper_MarshalJSON(t *testing.T) {
 }
 
 func TestNewPermissionsTxWithSequence(t *testing.T) {
-	privateAccount := makePrivateAccount("shhhhh")
-	args := snatives.SetBaseArgs(privateAccount.PublicKey().Address(), ptypes.HasRole, true)
-	permTx := payload.NewPermissionsTxWithSequence(privateAccount.PublicKey(), args, 1)
+	privateKey1 := makePrivateAccount("Shhh...")
+	privateKey2 := makePrivateAccount("Chhh...")
+
+	permTx, _ := payload.NewPermissionsTx(privateKey1.PublicKey().Address(), privateKey2.PublicKey().Address(), permission.Call, true, 1, 100)
 	testTxMarshalJSON(t, permTx)
-	testTxSignVerify(t, permTx)
 }
 
 func testTxMarshalJSON(t *testing.T, tx payload.Payload) {

@@ -29,8 +29,6 @@ import (
 	"github.com/hyperledger/burrow/execution/names"
 	"github.com/hyperledger/burrow/genesis"
 	"github.com/hyperledger/burrow/logging"
-	"github.com/hyperledger/burrow/permission"
-	ptypes "github.com/hyperledger/burrow/permission/types"
 	"github.com/tendermint/iavl"
 	dbm "github.com/tendermint/tmlibs/db"
 )
@@ -130,15 +128,7 @@ func MakeGenesisState(db dbm.DB, genesisDoc *genesis.GenesisDoc) (*State, error)
 		}
 	}
 
-	// global permissions are saved as the 0 address
-	// so they are included in the accounts tree
-	globalPerms := permission.DefaultAccountPermissions
-	globalPerms = genesisDoc.GlobalPermissions
-	// XXX: make sure the set bits are all true
-	// Without it the HasPermission() functions will fail
-	globalPerms.Base.SetBit = ptypes.AllPermFlags
-
-	permsAcc := acm.NewContractAccount(acm.GlobalPermissionsAddress, globalPerms)
+	permsAcc := acm.NewContractAccount(acm.GlobalPermissionsAddress, genesisDoc.GlobalPermissions)
 	permsAcc.AddToBalance(1337)
 
 	err := s.writeState.UpdateAccount(permsAcc)

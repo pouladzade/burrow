@@ -32,8 +32,8 @@ import (
 	"github.com/hyperledger/burrow/execution/evm/sha3"
 	"github.com/hyperledger/burrow/logging"
 	"github.com/hyperledger/burrow/permission"
-	ptypes "github.com/hyperledger/burrow/permission/types"
 	"github.com/hyperledger/burrow/txs"
+	"github.com/hyperledger/burrow/util"
 )
 
 const (
@@ -86,17 +86,6 @@ func (vm *VM) Debugf(format string, a ...interface{}) {
 // satisfies go_events.Eventable
 func (vm *VM) SetPublisher(publisher event.Publisher) {
 	vm.publisher = publisher
-}
-
-// CONTRACT: it is the duty of the contract writer to call known permissions
-// we do not convey if a permission is not set
-// (unlike in state/execution, where we guarantee HasPermission is called
-// on known permissions and panics else)
-// If the perm is not defined in the acc nor set by default in GlobalPermissions,
-// this function returns false.
-func HasPermission(stateWriter state.ReaderWriter, acc *acm.Account, perm ptypes.PermFlag) bool {
-	value, _ := acc.Permissions().Base.Compose(state.GlobalAccountPermissions(stateWriter).Base).Get(perm)
-	return value
 }
 
 func (vm *VM) fireCallEvent(exception *errors.CodedError, output *[]byte, callerAddress, calleeAddress crypto.Address, input []byte, value uint64, gas *uint64) {
@@ -858,8 +847,8 @@ func (vm *VM) call(callState *state.Cache, caller, callee *acm.Account, code, in
 		case CREATE: // 0xF0
 			vm.returnData = nil
 
-			if !HasPermission(callState, callee, ptypes.CreateContract) {
-				return nil, errors.PermissionDenied{Perm: ptypes.CreateContract}
+			if !util.HasPermissions(callState, callee, permission.CreateContract) {
+				return nil, errors.PermissionDenied{Perm: permission.CreateContract}
 			}
 			contractValue, popErr := stack.PopU64()
 			if popErr != nil {
@@ -905,8 +894,8 @@ func (vm *VM) call(callState *state.Cache, caller, callee *acm.Account, code, in
 		case CALL, CALLCODE, DELEGATECALL: // 0xF1, 0xF2, 0xF4
 			vm.returnData = nil
 
-			if !HasPermission(callState, callee, ptypes.Call) {
-				return nil, errors.PermissionDenied{Perm: ptypes.Call}
+			if !util.HasPermissions(callState, callee, permission.Call) {
+				return nil, errors.PermissionDenied{Perm: permission.Call}
 			}
 			gasLimit, popErr := stack.PopU64()
 			if popErr != nil {
@@ -985,8 +974,8 @@ func (vm *VM) call(callState *state.Cache, caller, callee *acm.Account, code, in
 				} else {
 					// nil account means we're sending funds to a new account
 					if acc == nil {
-						if !HasPermission(callState, caller, ptypes.CreateAccount) {
-							return nil, errors.PermissionDenied{Perm: ptypes.CreateAccount}
+						if !util.HasPermissions(callState, caller, permission.CreateAccount) {
+							return nil, errors.PermissionDenied{Perm: permission.CreateAccount}
 						}
 						acc = acm.NewContractAccount(crypto.AddressFromWord256(addr), permission.ZeroAccountPermissions)
 					}
@@ -1080,8 +1069,8 @@ func (vm *VM) call(callState *state.Cache, caller, callee *acm.Account, code, in
 				if useGasNegative(gas, GasCreateAccount, &gasErr) {
 					return nil, firstErr(err, gasErr)
 				}
-				if !HasPermission(callState, callee, ptypes.CreateContract) {
-					return nil, firstErr(err, errors.PermissionDenied{Perm: ptypes.CreateContract})
+				if !util.HasPermissions(callState, callee, permission.CreateContract) {
+					return nil, firstErr(err, errors.PermissionDenied{Perm: permission.CreateContract})
 				}
 				var createErr errors.CodedError
 				receiver, createErr = vm.createAccount(callState, callee, logger)

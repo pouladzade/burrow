@@ -3,7 +3,7 @@ package permission
 import (
 	"fmt"
 
-	"github.com/pkg/errors"
+	"github.com/hyperledger/burrow/errors"
 )
 
 type Permissions uint64
@@ -43,14 +43,15 @@ const (
 )
 
 var (
-	AllAccountPermissions     Permissions = (Reserved - 1)
-	DefaultAccountPermissions Permissions = Send | Call | CreateContract | CreateAccount | Bond | Name
-	ZeroAccountPermissions    Permissions = 0
+	ZeroPermissions    Permissions
+	DefaultPermissions Permissions = Call | Send | CreateAccount | CreateContract
 )
 
 func (p Permissions) EnsureValid() error {
-	if (p & ^AllAccountPermissions) != 0 {
-		return errors.Errorf("invalid permission %d", p)
+	allPermissions := (Reserved - 1)
+
+	if (p & ^allPermissions) != 0 {
+		return e.Errorf(e.ErrPermInvalid, "%x", p)
 	}
 	return nil
 }

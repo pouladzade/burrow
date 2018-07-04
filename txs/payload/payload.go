@@ -1,5 +1,11 @@
 package payload
 
+import (
+	"fmt"
+
+	"github.com/hyperledger/burrow/util"
+)
+
 /*
 Payload (Transaction) is an atomic operation on the ledger state.
 
@@ -74,9 +80,33 @@ func (typ *Type) UnmarshalText(data []byte) error {
 }
 
 type Payload interface {
-	String() string
-	GetInputs() []*TxInput
+	Inputs() []TxInput
+	Outputs() []TxOutput
 	Type() Type
+}
+
+func InAmount(p Payload) uint64 {
+	inAmount := uint64(0)
+	for _, input := range p.Inputs() {
+		inAmount += input.Amount
+	}
+	return inAmount
+}
+
+func OutAmount(p Payload) uint64 {
+	outAmount := uint64(0)
+	for _, output := range p.Outputs() {
+		outAmount += output.Amount
+	}
+	return outAmount
+}
+
+func Fee(p Payload) uint64 {
+	return InAmount(p) - OutAmount(p)
+}
+
+func String(p Payload) string {
+	return fmt.Sprintf("%s{%s}", p.Type(), util.ToString(p))
 }
 
 func New(txType Type) Payload {

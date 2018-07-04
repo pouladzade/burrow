@@ -118,20 +118,18 @@ func MakeGenesisState(db dbm.DB, genesisDoc *genesis.GenesisDoc) (*State, error)
 	}
 
 	// Make accounts state tree
-	for _, genAcc := range genesisDoc.Accounts() {
-		perm := genAcc.Permissions()
-		acc := acm.NewAccount(genAcc.PublicKey(), perm)
-		acc.AddToBalance(genAcc.Balance())
-		err := s.writeState.UpdateAccount(acc)
+	for _, account := range genesisDoc.Accounts() {
+		err := s.UpdateAccount(account)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	permsAcc := acm.NewContractAccount(acm.GlobalPermissionsAddress, genesisDoc.GlobalPermissions)
-	permsAcc.AddToBalance(1337)
+	globalAccount := acm.NewAccount(acm.GlobalAddress)
+	globalAccount.SetPermissions(genesisDoc.GlobalPermissions)
+	globalAccount.AddToBalance(1337)
 
-	err := s.writeState.UpdateAccount(permsAcc)
+	err := s.UpdateAccount(globalAccount)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +218,7 @@ func (ws *writeState) SetVersion(hash []byte, version int64) {
 
 // Returns nil if account does not exist with given address.
 func (s *State) GetAccount(address crypto.Address) (*acm.Account, error) {
-	_, accBytes := s.readTree.Get(prefixedKey(accountsPrefix, address.Bytes()))
+	_, accBytes := s.tree.Get(prefixedKey(accountsPrefix, address.Bytes()))
 	if accBytes == nil {
 		return nil, nil
 	}
@@ -297,10 +295,10 @@ func (s *State) IterateStorage(address crypto.Address,
 func (ws *writeState) Publish(ctx context.Context, msg interface{}, tags event.Tags) error {
 	if exeEvent, ok := msg.(*events.Event); ok {
 		key := exeEvent.Header.Key()
-		if !key.IsSuccessorOf(ws.state.eventKeyHighWatermark) {
-			return fmt.Errorf("received event with non-increasing key compared with current high watermark %v: %v",
-				ws.state.eventKeyHighWatermark, exeEvent)
-		}
+		//if !key.IsSuccessorOf(ws.state.eventKeyHighWatermark) {
+		//	return fmt.Errorf("received event with non-increasing key compared with current high watermark %v: %v",
+		//		ws.state.eventKeyHighWatermark, exeEvent)
+		//}
 		ws.state.eventKeyHighWatermark = key
 		if exeEvent.Tx != nil {
 			// Don't serialise the tx (for now) we should normalise and store against tx hash

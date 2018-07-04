@@ -21,8 +21,9 @@ import (
 )
 
 type AddressableSigner interface {
-	Addressable
 	crypto.Signer
+	Address() crypto.Address
+	PublicKey() crypto.PublicKey
 }
 
 type PrivateAccount interface {
@@ -32,8 +33,6 @@ type PrivateAccount interface {
 
 //
 type ConcretePrivateAccount struct {
-	Address    crypto.Address
-	PublicKey  crypto.PublicKey
 	PrivateKey crypto.PrivateKey
 }
 
@@ -52,18 +51,16 @@ func AsConcretePrivateAccount(privateAccount PrivateAccount) *ConcretePrivateAcc
 		return ca.ConcretePrivateAccount
 	}
 	return &ConcretePrivateAccount{
-		Address:    privateAccount.Address(),
-		PublicKey:  privateAccount.PublicKey(),
 		PrivateKey: privateAccount.PrivateKey(),
 	}
 }
 
 func (cpaw concretePrivateAccountWrapper) Address() crypto.Address {
-	return cpaw.ConcretePrivateAccount.Address
+	return cpaw.PublicKey().Address()
 }
 
 func (cpaw concretePrivateAccountWrapper) PublicKey() crypto.PublicKey {
-	return cpaw.ConcretePrivateAccount.PublicKey
+	return cpaw.PrivateKey().GetPublicKey()
 }
 
 func (cpaw concretePrivateAccountWrapper) PrivateKey() crypto.PrivateKey {
@@ -85,7 +82,7 @@ func (pa ConcretePrivateAccount) Sign(msg []byte) (crypto.Signature, error) {
 }
 
 func (pa *ConcretePrivateAccount) String() string {
-	return fmt.Sprintf("ConcretePrivateAccount{%s}", pa.Address)
+	return fmt.Sprintf("ConcretePrivateAccount{%s}", pa.PrivateAccount().Address())
 }
 
 // Convert slice of ConcretePrivateAccounts to slice of SigningAccounts
@@ -103,10 +100,7 @@ func GeneratePrivateAccount() (PrivateAccount, error) {
 	if err != nil {
 		return nil, err
 	}
-	publicKey := privateKey.GetPublicKey()
 	return ConcretePrivateAccount{
-		Address:    publicKey.Address(),
-		PublicKey:  publicKey,
 		PrivateKey: privateKey,
 	}.PrivateAccount(), nil
 }
@@ -114,10 +108,7 @@ func GeneratePrivateAccount() (PrivateAccount, error) {
 // Generates a new account with private key from SHA256 hash of a secret
 func GeneratePrivateAccountFromSecret(secret string) PrivateAccount {
 	privateKey := crypto.PrivateKeyFromSecret(secret, crypto.CurveTypeEd25519)
-	publicKey := privateKey.GetPublicKey()
 	return ConcretePrivateAccount{
-		Address:    publicKey.Address(),
-		PublicKey:  publicKey,
 		PrivateKey: privateKey,
 	}.PrivateAccount()
 }
@@ -127,10 +118,7 @@ func GeneratePrivateAccountFromPrivateKeyBytes(privKeyBytes []byte) (PrivateAcco
 	if err != nil {
 		return nil, err
 	}
-	publicKey := privateKey.GetPublicKey()
 	return ConcretePrivateAccount{
-		Address:    publicKey.Address(),
-		PublicKey:  publicKey,
 		PrivateKey: privateKey,
 	}.PrivateAccount(), nil
 }

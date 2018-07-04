@@ -20,7 +20,7 @@ func setupAccountPool(m *testing.M) {
 	for i, name := range names {
 		balance := rand.New(rand.NewSource(int64(i))).Uint64()
 		privateAccount := acm.GeneratePrivateAccountFromSecret(name)
-		account := acm.NewAccount(privateAccount.PrivateKey().GetPublicKey(), permission.DefaultAccountPermissions)
+		account := acm.NewAccount(privateAccount.Address())
 
 		account.AddToBalance(balance)
 
@@ -30,7 +30,8 @@ func setupAccountPool(m *testing.M) {
 }
 
 func makeAccount(t *testing.T, balance uint64, permissions permission.Permissions) (*acm.Account, crypto.Address) {
-	account := acm.NewAccount(generateNewPublicKey(t), permissions)
+	account := acm.NewAccount(generateNewAddress(t))
+	account.SetPermissions(permissions)
 	account.AddToBalance(balance)
 	updateAccount(t, account)
 	commit(t)
@@ -40,8 +41,9 @@ func makeAccount(t *testing.T, balance uint64, permissions permission.Permission
 
 func makeContractAccount(t *testing.T, code []byte, balance uint64, permissions permission.Permissions) (*acm.Account, crypto.Address) {
 	deriveFrom := getAccount(t, "b00f")
-	contractAcc := evm.DeriveNewAccount(deriveFrom, permissions, nopLogger)
+	contractAcc := evm.DeriveNewAccount(deriveFrom)
 	contractAcc.SetCode(code)
+	contractAcc.SetPermissions(permissions)
 	contractAcc.AddToBalance(balance)
 	updateAccount(t, contractAcc)
 	updateAccount(t, deriveFrom)

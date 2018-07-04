@@ -25,6 +25,7 @@ import (
 	"github.com/hyperledger/burrow/account/state"
 	. "github.com/hyperledger/burrow/binary"
 	"github.com/hyperledger/burrow/crypto"
+	"github.com/hyperledger/burrow/errors"
 	"github.com/hyperledger/burrow/event"
 	"github.com/hyperledger/burrow/execution/errors"
 	"github.com/hyperledger/burrow/execution/events"
@@ -111,7 +112,7 @@ func (vm *VM) fireCallEvent(exception *errors.CodedError, output *[]byte, caller
 // CONTRACT state is aware of caller and callee, so we can just mutate them.
 // CONTRACT code and input are not mutated.
 // CONTRACT returned 'ret' is a new compact slice.
-// value: To be transferred from caller to callee. Refunded upon errors.CodedError.
+// value: To be transferred from caller to callee. Refunded upon err.
 // gas:   Available gas. No refunds for gas.
 // code: May be nil, since the CALL opcode may be used to send value from contracts to accounts
 func (vm *VM) Call(callState *state.Cache, caller, callee *acm.Account, code, input []byte, value uint64, gas *uint64) (output []byte, err errors.CodedError) {
@@ -200,7 +201,7 @@ func useGasNegative(gasLeft *uint64, gasToUse uint64, err *errors.CodedError) bo
 }
 
 // Just like Call() but does not transfer 'value' or modify the callDepth.
-func (vm *VM) call(callState *state.Cache, caller, callee *acm.Account, code, input []byte, value uint64, gas *uint64) (output []byte, err errors.CodedError) {
+func (vm *VM) call(callState *state.Cache, caller *acm.Account, callee *acm.Account, code, input []byte, value uint64, gas *uint64) (output []byte, err errors.CodedError) {
 	vm.Debugf("(%d) (%X) %X (code=%d) gas: %v (d) %X\n", vm.stackDepth, caller.Address().Bytes()[:4], callee.Address(),
 		len(callee.Code()), *gas, input)
 
@@ -871,7 +872,7 @@ func (vm *VM) call(callState *state.Cache, caller, callee *acm.Account, code, in
 			if useGasNegative(gas, GasCreateAccount, &gasErr) {
 				return nil, firstErr(err, gasErr)
 			}
-			newAccount, createErr := vm.createAccount(callState, callee, logger)
+			newAccount, createErr := vm.createAccount(callState, callee)
 			if createErr != nil {
 				return nil, firstErr(err, createErr)
 			}
@@ -958,17 +959,17 @@ func (vm *VM) call(callState *state.Cache, caller, callee *acm.Account, code, in
 					return nil, firstErr(callErr, errAcc)
 				}
 				// since CALL is used also for sending funds,
-				// acc may not exist yet. This is an errors.CodedError for
+				// acc may not exist yet. This is an error for
 				// CALLCODE, but not for CALL, though I don't think
 				// ethereum actually cares
 				if op == CALLCODE {
 					if acc == nil {
-						return nil, firstErr(callErr, errors.ErrorCodeUnknownAddress)
+						return nil, firstErr(callErr, e.Error(e.ErrVMUnknownAddress))
 					}
 					ret, callErr = vm.Call(callState, callee, callee, acc.Code(), args, value, &gasLimit)
 				} else if op == DELEGATECALL {
 					if acc == nil {
-						return nil, firstErr(callErr, errors.ErrorCodeUnknownAddress)
+						return nil, firstErr(callErr, e.Error(e.ErrVMUnknownAddress))
 					}
 					ret, callErr = vm.DelegateCall(callState, caller, callee, acc.Code(), args, value, &gasLimit)
 				} else {
@@ -977,7 +978,7 @@ func (vm *VM) call(callState *state.Cache, caller, callee *acm.Account, code, in
 						if !util.HasPermissions(callState, caller, permission.CreateAccount) {
 							return nil, errors.PermissionDenied{Perm: permission.CreateAccount}
 						}
-						acc = acm.NewContractAccount(crypto.AddressFromWord256(addr), permission.ZeroAccountPermissions)
+						acc = acm.NewAccount(crypto.AddressFromWord256(addr))
 					}
 					// add account to the tx cache
 					callState.UpdateAccount(acc)
@@ -1072,8 +1073,8 @@ func (vm *VM) call(callState *state.Cache, caller, callee *acm.Account, code, in
 				if !util.HasPermissions(callState, callee, permission.CreateContract) {
 					return nil, firstErr(err, errors.PermissionDenied{Perm: permission.CreateContract})
 				}
-				var createErr errors.CodedError
-				receiver, createErr = vm.createAccount(callState, callee, logger)
+				var createErr error
+				receiver, createErr = vm.createAccount(callState, callee)
 				if createErr != nil {
 					return nil, firstErr(err, createErr)
 				}
@@ -1103,15 +1104,15 @@ func (vm *VM) call(callState *state.Cache, caller, callee *acm.Account, code, in
 	}
 }
 
-func (vm *VM) createAccount(callState *state.Cache, callee *acm.Account, logger *logging.Logger) (*acm.Account, errors.CodedError) {
-	newAccount := DeriveNewAccount(callee, state.GlobalAccountPermissions(callState), logger)
+func (vm *VM) createAccount(callState *state.Cache, callee *acm.Account) (*acm.Account, error) {
+	newAccount := DeriveNewAccount(callee)
 	err := callState.UpdateAccount(newAccount)
 	if err != nil {
-		return nil, errors.AsCodedError(err)
+		return nil, err
 	}
 	err = callState.UpdateAccount(callee)
 	if err != nil {
-		return nil, errors.AsCodedError(err)
+		return nil, err
 	}
 	return newAccount, nil
 }

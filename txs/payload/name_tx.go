@@ -1,11 +1,10 @@
 package payload
 
 import (
-	"fmt"
 	"regexp"
 
-	"github.com/hyperledger/burrow/account/state"
 	"github.com/hyperledger/burrow/crypto"
+	"github.com/hyperledger/burrow/errors"
 	"github.com/hyperledger/burrow/execution/names"
 )
 
@@ -15,73 +14,63 @@ var regexpAlphaNum = regexp.MustCompile("^[a-zA-Z0-9._/-@]*$")
 var regexpJSON = regexp.MustCompile(`^[a-zA-Z0-9_/ \-+"':,\n\t.{}()\[\]]*$`)
 
 type NameTx struct {
-	Input *TxInput
-	Name  string
-	Data  string
-	Fee   uint64
+	data nameData
 }
 
-func NewNameTx(st state.AccountGetter, from crypto.PublicKey, name, data string, amt, fee uint64) (*NameTx, error) {
-	addr := from.Address()
-	acc, err := st.GetAccount(addr)
-	if err != nil {
-		return nil, err
-	}
-	if acc == nil {
-		return nil, fmt.Errorf("Invalid address %s from pubkey %s", addr, from)
-	}
-
-	sequence := acc.Sequence() + 1
-	return NewNameTxWithSequence(from, name, data, amt, fee, sequence), nil
+type nameData struct {
+	Account TxInput `json:"account"`
+	Name    string  `json:"name"`
+	Data    string  `json:"data"`
 }
 
-func NewNameTxWithSequence(from crypto.PublicKey, name, data string, amt, fee, sequence uint64) *NameTx {
-	input := &TxInput{
-		Address:  from.Address(),
-		Amount:   amt,
-		Sequence: sequence,
-	}
-
+func NewNameTx(address crypto.Address, sequence, fee uint64, name, data string) (*NameTx, error) {
 	return &NameTx{
-		Input: input,
-		Name:  name,
-		Data:  data,
-		Fee:   fee,
-	}
+		data: nameData{
+			Account: TxInput{
+				Address:  address,
+				Sequence: sequence,
+				Amount:   fee,
+			},
+			Name: name,
+			Data: data,
+		},
+	}, nil
 }
 
-func (tx *NameTx) Type() Type {
-	return TypeName
+func (tx *NameTx) Type() Type              { return TypeName }
+func (tx *NameTx) Address() crypto.Address { return tx.data.Account.Address }
+func (tx *NameTx) Fee() uint64             { return tx.data.Account.Amount }
+func (tx *NameTx) Name() string            { return tx.data.Name }
+func (tx *NameTx) Data() string            { return tx.data.Data }
+
+func (tx *NameTx) Inputs() []TxInput {
+	return []TxInput{tx.data.Account}
 }
 
-func (tx *NameTx) GetInputs() []*TxInput {
-	return []*TxInput{tx.Input}
+func (tx *NameTx) Outputs() []TxOutput {
+	return []TxOutput{}
 }
 
 func (tx *NameTx) ValidateStrings() error {
-	if len(tx.Name) == 0 {
-		return ErrTxInvalidString{"Name must not be empty"}
+	if len(tx.data.Name) == 0 {
+		return e.Error(e.ErrTxInvalidString)
 	}
-	if len(tx.Name) > names.MaxNameLength {
-		return ErrTxInvalidString{fmt.Sprintf("Name is too long. Max %d bytes", names.MaxNameLength)}
+	if len(tx.data.Name) > names.MaxNameLength {
+		return e.Errorf(e.ErrTxInvalidString, "Name is too long. Max %d bytes", names.MaxNameLength)
 	}
-	if len(tx.Data) > names.MaxDataLength {
-		return ErrTxInvalidString{fmt.Sprintf("Data is too long. Max %d bytes", names.MaxDataLength)}
-	}
-
-	if !validateNameRegEntryName(tx.Name) {
-		return ErrTxInvalidString{fmt.Sprintf("Invalid characters found in NameTx.Name (%s). Only alphanumeric, underscores, dashes, forward slashes, and @ are allowed", tx.Name)}
+	if len(tx.data.Data) > names.MaxDataLength {
+		return e.Errorf(e.ErrTxInvalidString, "Data is too long. Max %d bytes", names.MaxDataLength)
 	}
 
-	if !validateNameRegEntryData(tx.Data) {
-		return ErrTxInvalidString{fmt.Sprintf("Invalid characters found in NameTx.Data (%s). Only the kind of things found in a JSON file are allowed", tx.Data)}
+	if !validateNameRegEntryName(tx.data.Name) {
+		return e.Errorf(e.ErrTxInvalidString, "Invalid characters found in NameTx.Name (%s). Only alphanumeric, underscores, dashes, forward slashes, and @ are allowed", tx.Name)
+	}
+
+	if !validateNameRegEntryData(tx.data.Data) {
+		return e.Errorf(e.ErrTxInvalidString, "Invalid characters found in NameTx.Data (%s). Only the kind of things found in a JSON file are allowed", tx.Data)
 	}
 
 	return nil
-}
-
-func (tx *NameTx) String() string {
-	return fmt.Sprintf("NameTx{%v -> %s: %s}", tx.Input, tx.Name, tx.Data)
 }
 
 // filter strings

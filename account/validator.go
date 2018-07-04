@@ -7,7 +7,8 @@ import (
 )
 
 type Validator interface {
-	Addressable
+	PublicKey() crypto.PublicKey
+	Address() crypto.Address
 	// The validator's voting power
 	Power() uint64
 }
@@ -25,10 +26,10 @@ type concreteValidatorWrapper struct {
 
 var _ Validator = concreteValidatorWrapper{}
 
-func AsValidator(account *Account) Validator {
+func AsValidator(account *Account, publicKey crypto.PublicKey) Validator {
 	return ConcreteValidator{
+		PublicKey: publicKey,
 		Address:   account.Address(),
-		PublicKey: account.PublicKey(),
 		Power:     account.Balance(),
 	}.Validator()
 }

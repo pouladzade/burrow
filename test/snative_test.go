@@ -21,13 +21,14 @@ import (
 	"strings"
 
 	. "github.com/hyperledger/burrow/binary"
-	"github.com/hyperledger/burrow/execution/errors"
+	e "github.com/hyperledger/burrow/errors"
 	"github.com/hyperledger/burrow/execution/evm"
 	"github.com/hyperledger/burrow/execution/evm/abi"
 	"github.com/hyperledger/burrow/execution/evm/asm/bc"
 	"github.com/hyperledger/burrow/execution/evm/sha3"
 	"github.com/hyperledger/burrow/permission"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Compiling the Permissions solidity contract at
@@ -63,6 +64,9 @@ func TestSNativeContractDescription_Dispatch(t *testing.T) {
 	caller := getAccount(t, "alice")
 	grantee := getAccount(t, "bob")
 
+	// bob has create account permission
+	setPermissions(t, "bob", permission.CreateAccount)
+
 	function, err := contract.FunctionByName("hasPermissions")
 	if err != nil {
 		t.Fatalf("Could not get function: %s", err)
@@ -75,14 +79,14 @@ func TestSNativeContractDescription_Dispatch(t *testing.T) {
 	if !assert.Error(t, err, "Should fail due to lack of permissions") {
 		return
 	}
-	assert.IsType(t, err, errors.LacksSNativePermission{})
+	assert.Equal(t, e.Code(err), e.ErrPermDenied)
 
-	// Grant all permissions and dispatch should success
-	caller.SetPermissions(permission.AllAccountPermissions)
+	// Grant required permissions and dispatch should success
+	caller.SetPermissions(permission.ModifyPermission)
 	retValue, err = contract.Dispatch(bc1State, caller, bc.MustSplice(funcID[:],
 		grantee.Address().Word256(), permissionsToWord256(permission.CreateAccount)), &defaultGas, nopLogger)
-	assert.NoError(t, err)
-	assert.Equal(t, retValue, LeftPadBytes([]byte{1}, 32))
+	require.NoError(t, err)
+	require.Equal(t, retValue, LeftPadBytes([]byte{1}, 32))
 }
 
 func TestSNativeContractDescription_Address(t *testing.T) {

@@ -33,7 +33,7 @@ func TestBootThenShutdown(t *testing.T) {
 	logger, _ := lifecycle.NewStdErrLogger()
 	//logger := logging.NewNoopLogger()
 	genesisDoc, privAccount := deterministicGenesisDoc()
-	privValidator := validator.NewPrivValidatorMemory(privAccount, privAccount)
+	privValidator := validator.NewPrivValidatorMemory(privAccount.PublicKey(), privAccount)
 	assert.NoError(t, bootWaitBlocksShutdown(privValidator, genesisDoc, tmConf, logger, nil))
 }
 
@@ -46,7 +46,7 @@ func TestBootShutdownResume(t *testing.T) {
 	//logger := logging.NewNoopLogger()
 
 	genesisDoc, privAccount := deterministicGenesisDoc()
-	privValidator := validator.NewPrivValidatorMemory(privAccount, privAccount)
+	privValidator := validator.NewPrivValidatorMemory(privAccount.PublicKey(), privAccount)
 
 	i := int64(0)
 	// asserts we get a consecutive run of blocks
@@ -68,11 +68,11 @@ func TestBootShutdownResume(t *testing.T) {
 func deterministicGenesisDoc() (*genesis.GenesisDoc, acm.PrivateAccount) {
 	names := map[crypto.Address]string{}
 	privAccount := acm.GeneratePrivateAccountFromSecret("test-account")
-	account := acm.NewAccount(privAccount.PublicKey(), permission.DefaultAccountPermissions)
+	account := acm.NewAccount(privAccount.Address())
 	account.AddToBalance(1000)
 	accounts := []*acm.Account{account}
-	validators := []acm.Validator{acm.AsValidator(account)}
-	genesisDoc := genesis.MakeGenesisDoc("tm-chanin", nil, time.Now(), permission.ZeroAccountPermissions, names, accounts, validators)
+	validators := []acm.Validator{acm.AsValidator(account, privAccount.PublicKey())}
+	genesisDoc := genesis.MakeGenesisDoc("tm-chain", nil, time.Now(), permission.ZeroPermissions, names, accounts, validators)
 
 	return genesisDoc, privAccount
 }

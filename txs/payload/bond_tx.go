@@ -1,62 +1,47 @@
 package payload
 
 import (
-	"fmt"
-
-	"github.com/hyperledger/burrow/account/state"
 	"github.com/hyperledger/burrow/crypto"
 )
 
 type BondTx struct {
-	// At least one should have bond permission (even if 0 amount transfer)
-	Inputs   []*TxInput
-	UnbondTo []*TxOutput
+	data bondData
 }
 
-func NewBondTx(pubkey crypto.PublicKey) (*BondTx, error) {
+type bondData struct {
+	From      TxInput          `json:"from"`
+	To        TxOutput         `json:"to"`         // Validator
+	PublicKey crypto.PublicKey `json:"public_key"` // Validator
+}
+
+func NewBondTx(from crypto.Address, to crypto.PublicKey, amount, sequence, fee uint64) (*BondTx, error) {
 	return &BondTx{
-		Inputs:   []*TxInput{},
-		UnbondTo: []*TxOutput{},
+		data: bondData{
+			From: TxInput{
+				Address:  from,
+				Sequence: sequence,
+				Amount:   amount + fee,
+			},
+			To: TxOutput{
+				Address: to.Address(),
+				Amount:  amount,
+			},
+			PublicKey: to,
+		},
 	}, nil
 }
 
-func (tx *BondTx) Type() Type {
-	return TypeBond
+func (tx *BondTx) Type() Type                  { return TypeBond }
+func (tx *BondTx) From() crypto.Address        { return tx.data.From.Address }
+func (tx *BondTx) To() crypto.Address          { return tx.data.To.Address }
+func (tx *BondTx) PublicKey() crypto.PublicKey { return tx.data.PublicKey }
+func (tx *BondTx) Amount() uint64              { return tx.data.To.Amount }
+func (tx *BondTx) Fee() uint64                 { return tx.data.From.Amount - tx.data.To.Amount }
+
+func (tx *BondTx) Inputs() []TxInput {
+	return []TxInput{tx.data.From}
 }
 
-func (tx *BondTx) GetInputs() []*TxInput {
-	return tx.Inputs
-}
-
-func (tx *BondTx) String() string {
-	return fmt.Sprintf("BondTx{%v -> %v}", tx.Inputs, tx.UnbondTo)
-}
-
-func (tx *BondTx) AddInput(st state.AccountGetter, pubkey crypto.PublicKey, amt uint64) error {
-	addr := pubkey.Address()
-	acc, err := st.GetAccount(addr)
-	if err != nil {
-		return err
-	}
-	if acc == nil {
-		return fmt.Errorf("Invalid address %s from pubkey %s", addr, pubkey)
-	}
-	return tx.AddInputWithSequence(pubkey, amt, acc.Sequence()+uint64(1))
-}
-
-func (tx *BondTx) AddInputWithSequence(pubkey crypto.PublicKey, amt uint64, sequence uint64) error {
-	tx.Inputs = append(tx.Inputs, &TxInput{
-		Address:  pubkey.Address(),
-		Amount:   amt,
-		Sequence: sequence,
-	})
-	return nil
-}
-
-func (tx *BondTx) AddOutput(addr crypto.Address, amt uint64) error {
-	tx.UnbondTo = append(tx.UnbondTo, &TxOutput{
-		Address: addr,
-		Amount:  amt,
-	})
-	return nil
+func (tx *BondTx) Outputs() []TxOutput {
+	return []TxOutput{tx.data.To}
 }

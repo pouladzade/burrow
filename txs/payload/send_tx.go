@@ -1,62 +1,44 @@
 package payload
 
 import (
-	"fmt"
-
-	"github.com/hyperledger/burrow/account/state"
 	"github.com/hyperledger/burrow/crypto"
 )
 
 type SendTx struct {
-	Inputs  []*TxInput
-	Outputs []*TxOutput
+	data sendData
+}
+type sendData struct {
+	Senders   []TxInput  `json:"sender"`
+	Receivers []TxOutput `json:"receiver"`
 }
 
-func NewSendTx() *SendTx {
-	return &SendTx{
-		Inputs:  []*TxInput{},
-		Outputs: []*TxOutput{},
-	}
+func EmptySendTx() (*SendTx, error) {
+	return &SendTx{}, nil
 }
 
-func (tx *SendTx) GetInputs() []*TxInput {
-	return tx.Inputs
+func NewSendTx(from, to crypto.Address, sequence, amount, fee uint64) (*SendTx, error) {
+	tx := &SendTx{}
+	tx.AddSender(from, sequence, amount+fee)
+	tx.AddReceiver(to, amount)
+
+	return tx, nil
 }
 
-func (tx *SendTx) Type() Type {
-	return TypeSend
-}
+func (tx *SendTx) Type() Type          { return TypeSend }
+func (tx *SendTx) Inputs() []TxInput   { return tx.data.Senders }
+func (tx *SendTx) Outputs() []TxOutput { return tx.data.Receivers }
 
-func (tx *SendTx) String() string {
-	return fmt.Sprintf("SendTx{%v -> %v}", tx.Inputs, tx.Outputs)
-}
-
-func (tx *SendTx) AddInput(st state.AccountGetter, pubkey crypto.PublicKey, amt uint64) error {
-	addr := pubkey.Address()
-	acc, err := st.GetAccount(addr)
-	if err != nil {
-		return err
-	}
-	if acc == nil {
-		return fmt.Errorf("invalid address %s from pubkey %s", addr, pubkey)
-	}
-	return tx.AddInputWithSequence(pubkey, amt, acc.Sequence()+1)
-}
-
-func (tx *SendTx) AddInputWithSequence(pubkey crypto.PublicKey, amt uint64, sequence uint64) error {
-	addr := pubkey.Address()
-	tx.Inputs = append(tx.Inputs, &TxInput{
-		Address:  addr,
-		Amount:   amt,
+func (tx *SendTx) AddSender(address crypto.Address, sequence, amount uint64) {
+	tx.data.Senders = append(tx.data.Senders, TxInput{
+		Address:  address,
+		Amount:   amount,
 		Sequence: sequence,
 	})
-	return nil
 }
 
-func (tx *SendTx) AddOutput(addr crypto.Address, amt uint64) error {
-	tx.Outputs = append(tx.Outputs, &TxOutput{
-		Address: addr,
-		Amount:  amt,
+func (tx *SendTx) AddReceiver(address crypto.Address, amount uint64) {
+	tx.data.Receivers = append(tx.data.Receivers, TxOutput{
+		Address: address,
+		Amount:  amount,
 	})
-	return nil
 }

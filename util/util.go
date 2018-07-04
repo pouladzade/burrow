@@ -15,6 +15,7 @@
 package util
 
 import (
+	"encoding/json"
 	"regexp"
 )
 
@@ -46,4 +47,12 @@ func IsPubKey(str string) bool {
 // Is the candidate a private key string (64 bytes, hex). This is not a good name.
 func IsPrivKey(str string) bool {
 	return privRe.MatchString(str)
+}
+
+func ToString(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "Marshaling error"
+	}
+	return string(b)
 }

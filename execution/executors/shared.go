@@ -1,156 +1,114 @@
 package executors
 
 import (
-	"fmt"
-
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/account/state"
 	"github.com/hyperledger/burrow/crypto"
-	"github.com/hyperledger/burrow/logging"
+	e "github.com/hyperledger/burrow/errors"
 	"github.com/hyperledger/burrow/permission"
 	"github.com/hyperledger/burrow/txs/payload"
 	"github.com/hyperledger/burrow/util"
 )
 
-// The accounts from the TxInputs must either already have
-// acm.PublicKey().(type) != nil, (it must be known),
-// or it must be specified in the TxInput.  If redeclared,
-// the TxInput is modified and input.PublicKey() set to nil.
-func getInputs(accountGetter state.AccountGetter,
-	ins []*payload.TxInput) (map[crypto.Address]*acm.Account, error) {
+func checkTx(getter state.AccountGetter, tx payload.Payload, requiredPermissions permission.Permissions) (
+	accounts map[crypto.Address]*acm.Account, err error) {
 
-	accounts := map[crypto.Address]*acm.Account{}
-	for _, in := range ins {
-		// Account shouldn't be duplicated
-		if _, ok := accounts[in.Address]; ok {
-			return nil, payload.ErrTxDuplicateAddress
+	accounts = make(map[crypto.Address]*acm.Account)
+	inputs := tx.Inputs()
+	outputs := tx.Outputs()
+	inAmount := uint64(0)
+	outAmount := uint64(0)
+	for _, input := range inputs {
+		// Check TxInput basic
+		if err := input.ValidateBasic(); err != nil {
+			return nil, err
 		}
-		acc, err := state.GetAccount(accountGetter, in.Address)
+
+		account, err := getter.GetAccount(input.Address)
 		if err != nil {
 			return nil, err
 		}
-		if acc == nil {
-			return nil, payload.ErrTxInvalidAddress
+
+		if !util.HasPermissions(getter, account, requiredPermissions) {
+			return nil, e.Errorf(e.ErrPermDenied, "%s has %s but needs %s", account.Address(), account.Permissions(), requiredPermissions)
+
 		}
-		accounts[in.Address] = acc
+
+		// Check sequences
+		if account.Sequence()+1 != uint64(input.Sequence) {
+			return nil, e.Errorf(e.ErrTxInvalidSequence, "%s has set sequence to %s. It should be %s", input.Address, input.Sequence, account.Sequence()+uint64(1))
+		}
+
+		// Check amount
+		if account.Balance() < uint64(input.Amount) {
+			return nil, e.Error(e.ErrTxInsufficientFunds)
+		}
+
+		// Account shouldn't be duplicated
+		if _, ok := accounts[input.Address]; ok {
+			return nil, e.Error(e.ErrTxDuplicateAddress)
+		}
+
+		accounts[input.Address] = account
+		inAmount += input.Amount
 	}
+
+	for _, output := range outputs {
+		// Check TxOutput basic
+		if err := output.ValidateBasic(); err != nil {
+			return nil, err
+		}
+
+		account, err := getter.GetAccount(output.Address)
+		if err != nil {
+			return nil, err
+		}
+
+		// Account shouldn't be duplicated
+		if _, ok := accounts[output.Address]; ok {
+			return nil, e.Error(e.ErrTxDuplicateAddress)
+		}
+
+		accounts[output.Address] = account
+		outAmount += output.Amount
+	}
+
+	if inAmount < outAmount {
+		return nil, e.Error(e.ErrTxInsufficientFunds)
+	}
+
 	return accounts, nil
 }
 
-func getOrMakeOutputs(accountGetter state.AccountGetter, accs map[crypto.Address]*acm.Account,
-	outs []*payload.TxOutput, logger *logging.Logger) (map[crypto.Address]*acm.Account, error) {
-	if accs == nil {
-		accs = make(map[crypto.Address]*acm.Account)
-	}
+func adjustByInputs(accounts map[crypto.Address]*acm.Account, inputs []payload.TxInput) error {
+	for _, input := range inputs {
+		account := accounts[input.Address]
+		if account == nil {
+			return e.Error(e.ErrTxInvalidAddress)
+		}
 
-	// we should err if an account is being created but the inputs don't have permission
-	var checkedCreatePerms bool
-	for _, out := range outs {
-		// Account shouldn't be duplicated
-		if _, ok := accs[out.Address]; ok {
-			return nil, payload.ErrTxDuplicateAddress
+		if account.Balance() < input.Amount {
+			return e.Error(e.ErrTxInsufficientFunds)
 		}
-		acc, err := state.GetAccount(accountGetter, out.Address)
-		if err != nil {
-			return nil, err
-		}
-		// output account may be nil (new)
-		if acc == nil {
-			if !checkedCreatePerms {
-				if !util.HaveCreateAccountPermission(accountGetter, accs) {
-					return nil, fmt.Errorf("at least one input does not have permission to create accounts")
-				}
-				checkedCreatePerms = true
-			}
-			acc = acm.NewContractAccount(out.Address, permission.ZeroAccountPermissions)
-		}
-		accs[out.Address] = acc
-	}
-	return accs, nil
-}
 
-func validateInputs(accs map[crypto.Address]*acm.Account, ins []*payload.TxInput) (uint64, error) {
-	total := uint64(0)
-	for _, in := range ins {
-		acc := accs[in.Address]
-		if acc == nil {
-			return 0, fmt.Errorf("validateInputs() expects account in accounts, but account %s not found", in.Address)
-		}
-		err := validateInput(acc, in)
-		if err != nil {
-			return 0, err
-		}
-		// Good. Add amount to total
-		total += in.Amount
-	}
-	return total, nil
-}
-
-func validateInput(acc *acm.Account, in *payload.TxInput) error {
-	// Check TxInput basic
-	if err := in.ValidateBasic(); err != nil {
-		return err
-	}
-	// Check sequences
-	if acc.Sequence()+1 != uint64(in.Sequence) {
-		return payload.ErrTxInvalidSequence{
-			Got:      in.Sequence,
-			Expected: acc.Sequence() + uint64(1),
-		}
-	}
-	// Check amount
-	if acc.Balance() < uint64(in.Amount) {
-		return payload.ErrTxInsufficientFunds
-	}
-	return nil
-}
-
-func validateOutputs(outs []*payload.TxOutput) (uint64, error) {
-	total := uint64(0)
-	for _, out := range outs {
-		// Check TxOutput basic
-		if err := out.ValidateBasic(); err != nil {
-			return 0, err
-		}
-		// Good. Add amount to total
-		total += out.Amount
-	}
-	return total, nil
-}
-
-func adjustByInputs(accs map[crypto.Address]*acm.Account, ins []*payload.TxInput, logger *logging.Logger) error {
-	for _, in := range ins {
-		acc := accs[in.Address]
-		if acc == nil {
-			return fmt.Errorf("adjustByInputs() expects account in accounts, but account %s not found", in.Address)
-		}
-		if acc.Balance() < in.Amount {
-			panic("adjustByInputs() expects sufficient funds")
-			return fmt.Errorf("adjustByInputs() expects sufficient funds but account %s only has balance %v and "+
-				"we are deducting %v", in.Address, acc.Balance(), in.Amount)
-		}
-		err := acc.SubtractFromBalance(in.Amount)
+		err := account.SubtractFromBalance(input.Amount)
 		if err != nil {
 			return err
 		}
-		logger.TraceMsg("Incrementing sequence number for SendTx (adjustByInputs)",
-			"tag", "sequence",
-			"account", acc.Address(),
-			"old_sequence", acc.Sequence(),
-			"new_sequence", acc.Sequence()+1)
-		acc.IncSequence()
+
+		account.IncSequence()
 	}
 	return nil
 }
 
-func adjustByOutputs(accs map[crypto.Address]*acm.Account, outs []*payload.TxOutput) error {
-	for _, out := range outs {
-		acc := accs[out.Address]
-		if acc == nil {
-			return fmt.Errorf("adjustByOutputs() expects account in accounts, but account %s not found",
-				out.Address)
+func adjustByOutputs(accounts map[crypto.Address]*acm.Account, outputs []payload.TxOutput) error {
+	for _, output := range outputs {
+		account := accounts[output.Address]
+		if account == nil {
+			return e.Error(e.ErrTxInvalidAddress)
 		}
-		err := acc.AddToBalance(out.Amount)
+
+		err := account.AddToBalance(output.Amount)
 		if err != nil {
 			return err
 		}

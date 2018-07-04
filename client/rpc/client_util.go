@@ -32,7 +32,7 @@ import (
 // TODO: better support for multisig and bonding
 func signTx(keyClient keys.KeyClient, tx *txs.Tx) (crypto.Address, *txs.Envelope, error) {
 	txEnv := tx.Enclose()
-	inputs := tx.GetInputs()
+	inputs := tx.Payload.Inputs()
 	signer, err := keys.AddressableSigner(keyClient, inputs[0].Address)
 	if err != nil {
 		return crypto.ZeroAddress, nil, err

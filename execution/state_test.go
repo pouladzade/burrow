@@ -37,17 +37,19 @@ import (
 
 func TestState_UpdateAccount(t *testing.T) {
 	s := NewState(db.NewMemDB())
-	account := acm.NewAccountFromSecret("Foo", permission.InterChainTx|permission.CreateChain)
-	account.AddToBalance(100)
+	acc1 := acm.NewAccountFromSecret("Secret")
+	acc1.SetPermissions(permission.Send | permission.CreateContract)
+	acc1.AddToBalance(100)
+	acc1.IncSequence()
+	acc1.SetStorageRoot([]byte{1, 2, 3, 4, 5})
+	acc1.SetCode([]byte{60, 23, 45})
 
-	_, err := s.Update(func(ws Updatable) error {
-		return ws.UpdateAccount(account)
-	})
+	err := s.UpdateAccount(acc1)
+	require.NoError(t, err)
 
+	acc2, err := s.GetAccount(acc1.Address())
 	require.NoError(t, err)
-	accountOut, err := s.GetAccount(account.Address())
-	require.NoError(t, err)
-	assert.Equal(t, account, accountOut)
+	assert.Equal(t, acc1, acc2)
 }
 
 func TestState_Publish(t *testing.T) {
@@ -96,6 +98,7 @@ func TestProtobufEventSerialisation(t *testing.T) {
 }
 
 func mkEvent(height, index uint64) *events.Event {
+	tx, _ := payload.EmptySendTx()
 	return &events.Event{
 		Header: &events.Header{
 			Height:  height,
@@ -104,7 +107,7 @@ func mkEvent(height, index uint64) *events.Event {
 			EventID: fmt.Sprintf("eventID: %v%v", height, index),
 		},
 		Tx: &events.EventDataTx{
-			Tx: txs.Enclose("foo", &payload.CallTx{}).Tx,
+			Tx: &txs.Enclose("foo", tx).Tx,
 		},
 		Log: &events.EventDataLog{
 			Address: crypto.Address{byte(height), byte(index)},

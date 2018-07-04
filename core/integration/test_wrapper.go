@@ -104,7 +104,7 @@ func TestWrapper(privateAccounts []acm.PrivateAccount, genesisDoc *genesis.Genes
 func TestGenesisDoc(addressables []acm.PrivateAccount) *genesis.GenesisDoc {
 	accounts := make([]*acm.Account, len(addressables))
 	for i, pa := range addressables {
-		account := acm.NewAccount(pa.PublicKey(), permission.AllAccountPermissions)
+		account := acm.NewAccount(pa.PublicKey(), permission.AllPermissions)
 		account.AddToBalance(1 << 32)
 		accounts[i] = account
 	}
@@ -112,7 +112,7 @@ func TestGenesisDoc(addressables []acm.PrivateAccount) *genesis.GenesisDoc {
 	if err != nil {
 		panic("could not parse test genesis time")
 	}
-	return genesis.MakeGenesisDoc(chainName, nil, genesisTime, permission.DefaultAccountPermissions,
+	return genesis.MakeGenesisDoc(chainName, nil, genesisTime, permission.DefaultPermissions,
 		map[crypto.Address]string{}, accounts,
 		[]acm.Validator{
 			acm.AsValidator(accounts[0]),

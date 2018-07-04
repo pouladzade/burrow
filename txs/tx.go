@@ -28,8 +28,8 @@ import (
 // Tx is the canonical object that we serialise to produce the SignBytes that we sign
 type Tx struct {
 	ChainID string
-	payload.Payload
-	txHash []byte
+	Payload payload.Payload
+	txHash  []byte
 }
 
 // Wrap the Payload in Tx required for signing and serialisation
@@ -42,7 +42,7 @@ func NewTx(payload payload.Payload) *Tx {
 // Enclose this Tx in an Envelope to be signed
 func (tx *Tx) Enclose() *Envelope {
 	return &Envelope{
-		Tx: tx,
+		Tx: *tx,
 	}
 }
 
@@ -88,7 +88,7 @@ func (tx *Tx) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(wrapper{
 		ChainID: tx.ChainID,
-		Type:    tx.Type(),
+		Type:    tx.Payload.Type(),
 		Payload: bs,
 	})
 }
@@ -153,11 +153,11 @@ func (tx *Tx) GenerateReceipt() *Receipt {
 		TxHash: tx.Hash(),
 	}
 	if callTx, ok := tx.Payload.(*payload.CallTx); ok {
-		receipt.CreatesContract = callTx.Address == nil
+		receipt.CreatesContract = callTx.CreatesContract()
 		if receipt.CreatesContract {
-			receipt.ContractAddress = crypto.NewContractAddress(callTx.Input.Address, callTx.Input.Sequence)
+			receipt.ContractAddress = crypto.NewContractAddress(callTx.Caller(), callTx.Sequence())
 		} else {
-			receipt.ContractAddress = *callTx.Address
+			receipt.ContractAddress = callTx.Callee()
 		}
 	}
 	return receipt

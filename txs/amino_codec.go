@@ -20,6 +20,7 @@ func NewAminoCodec() *aminoCodec {
 	registerTx(cdc, &payload.UnbondTx{})
 	registerTx(cdc, &payload.PermissionsTx{})
 	registerTx(cdc, &payload.NameTx{})
+
 	return &aminoCodec{cdc}
 }
 

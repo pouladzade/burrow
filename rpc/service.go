@@ -307,7 +307,6 @@ func (s *Service) GetAccountHumanReadable(address crypto.Address) (*ResultGetAcc
 	return &ResultGetAccountHumanReadable{
 		Account: &AccountHumanReadable{
 			Address:     acc.Address(),
-			PublicKey:   acc.PublicKey(),
 			Sequence:    acc.Sequence(),
 			Balance:     acc.Balance(),
 			Code:        tokens,

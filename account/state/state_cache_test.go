@@ -1,10 +1,7 @@
 package state
 
 import (
-	"fmt"
 	"testing"
-
-	"github.com/hyperledger/burrow/permission"
 
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/binary"
@@ -51,7 +48,6 @@ func TestStateCache_Miss(t *testing.T) {
 	acc1Address := addressOf("acc1")
 	acc1, err := cache.GetAccount(acc1Address)
 	require.NoError(t, err)
-	fmt.Println(acc1)
 
 	acc1Exp := readBackend.Accounts[acc1Address]
 	assert.Equal(t, acc1Exp, *acc1)
@@ -66,7 +62,7 @@ func TestStateCache_UpdateAccount(t *testing.T) {
 	cache := NewCache(backend)
 	// Create acccount
 	balance := uint64(24)
-	accNew := acm.NewAccountFromSecret("accNew", permission.DefaultAccountPermissions)
+	accNew := acm.NewAccountFromSecret("accNew")
 	accNew.AddToBalance(balance)
 
 	err := cache.UpdateAccount(accNew)
@@ -112,7 +108,7 @@ func TestStateCache_RemoveAccount(t *testing.T) {
 	cache := NewCache(backend)
 
 	//Create new account
-	newAcc := acm.NewAccountFromSecret("newAcc", permission.DefaultAccountPermissions)
+	newAcc := acm.NewAccountFromSecret("newAcc")
 	newAcc.AddToBalance(100)
 	err := cache.UpdateAccount(newAcc)
 	require.NoError(t, err)
@@ -184,7 +180,7 @@ func TestStateCache_SetStorage(t *testing.T) {
 	cache := NewCache(backend)
 
 	//Create new account and set its storage in cache
-	newAcc := acm.NewAccountFromSecret("newAcc", permission.DefaultAccountPermissions)
+	newAcc := acm.NewAccountFromSecret("newAcc")
 	newAcc.AddToBalance(100)
 	err := cache.SetStorage(newAcc.Address(), word("What?"), word("Huh?"))
 	require.Error(t, err)
@@ -215,7 +211,7 @@ func TestStateCache_Sync(t *testing.T) {
 
 	//Create new account
 	balance := uint64(24)
-	newAcc := acm.NewAccountFromSecret("newAcc", permission.DefaultAccountPermissions)
+	newAcc := acm.NewAccountFromSecret("newAcc")
 	newAcc.AddToBalance(balance)
 
 	//Update cache with account changes
@@ -269,7 +265,7 @@ func TestStateCache_get(t *testing.T) {
 	cache := NewCache(backend)
 
 	//Create new account
-	newAcc := acm.NewAccountFromSecret("newAcc", permission.DefaultAccountPermissions)
+	newAcc := acm.NewAccountFromSecret("newAcc")
 	newAcc.AddToBalance(100)
 
 	//Add new account to cache
@@ -293,11 +289,8 @@ func TestStateCache_get(t *testing.T) {
 }
 
 func testAccounts() *MemoryState {
-	perm1 := permission.ZeroAccountPermissions
-	acc1 := acm.NewAccountFromSecret("acc1", perm1)
-
-	perm2 := permission.ZeroAccountPermissions
-	acc2 := acm.NewContractAccountFromSecret("acc2", perm2)
+	acc1 := acm.NewAccountFromSecret("acc1")
+	acc2 := acm.NewAccountFromSecret("acc2")
 
 	code, _ := acm.NewBytecode(asm.PUSH1, 0x20)
 	acc2.SetCode(code)
@@ -311,7 +304,7 @@ func testAccounts() *MemoryState {
 }
 
 func addressOf(secret string) crypto.Address {
-	return acm.NewAccountFromSecret(secret, permission.DefaultAccountPermissions).Address()
+	return acm.NewAccountFromSecret(secret).Address()
 }
 
 func account(acc *acm.Account, keyvals ...string) *MemoryState {

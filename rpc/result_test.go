@@ -26,9 +26,7 @@ import (
 	"github.com/hyperledger/burrow/binary"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/execution"
-	"github.com/hyperledger/burrow/permission"
 	"github.com/hyperledger/burrow/txs"
-	"github.com/hyperledger/burrow/txs/payload"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	goCrypto "github.com/tendermint/go-crypto"
@@ -52,23 +50,8 @@ func TestResultBroadcastTx(t *testing.T) {
 	assert.Equal(t, `{"TxHash":"666F6F","CreatesContract":true,"ContractAddress":"0002030000000000000000000000000000000000"}`, string(bs))
 }
 
-func TestListUnconfirmedTxs(t *testing.T) {
-	res := &ResultListUnconfirmedTxs{
-		NumTxs: 3,
-		Txs: []*txs.Envelope{
-			txs.Enclose("testChain", &payload.CallTx{
-				Address: &crypto.Address{1},
-			}),
-		},
-	}
-	bs, err := json.Marshal(res)
-	require.NoError(t, err)
-	assert.Equal(t, "{\"NumTxs\":3,\"Txs\":[{\"Signatories\":null,\"Tx\":{\"ChainID\":\"testChain\",\"Type\":\"CallTx\",\"Payload\":{\"Input\":null,\"Address\":\"0100000000000000000000000000000000000000\",\"GasLimit\":0,\"Fee\":0}}}]}",
-		string(bs))
-}
-
 func TestResultListAccounts(t *testing.T) {
-	concreteAcc := acm.NewAccountFromSecret("Super Semi Secret", permission.DefaultAccountPermissions)
+	concreteAcc := acm.NewAccountFromSecret("Super Semi Secret")
 	concreteAcc.AddToBalance(100)
 
 	acc := concreteAcc

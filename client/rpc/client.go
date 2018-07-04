@@ -45,11 +45,9 @@ func Send(nodeClient client.NodeClient, keyClient keys.KeyClient, pubkey, addr, 
 		return nil, err
 	}
 
-	tx := payload.NewSendTx()
-	tx.AddInputWithSequence(pub, amt, sequence)
-	tx.AddOutput(toAddress, amt)
+	tx, err := payload.NewSendTx(pub.Address(), toAddress, sequence, amt, 0)
 
-	return tx, nil
+	return tx, err
 }
 
 func Call(nodeClient client.NodeClient, keyClient keys.KeyClient, pubkey, addr, toAddr, amtS, sequenceS, gasS, feeS, data string) (*payload.CallTx, error) {
@@ -58,14 +56,14 @@ func Call(nodeClient client.NodeClient, keyClient keys.KeyClient, pubkey, addr, 
 		return nil, err
 	}
 
-	var toAddress *crypto.Address
+	var toAddress crypto.Address
 
 	if toAddr != "" {
 		address, err := addressFromHexString(toAddr)
 		if err != nil {
 			return nil, fmt.Errorf("toAddr is bad hex: %v", err)
 		}
-		toAddress = &address
+		toAddress = address
 	}
 
 	fee, err := strconv.ParseUint(feeS, 10, 64)
@@ -83,12 +81,12 @@ func Call(nodeClient client.NodeClient, keyClient keys.KeyClient, pubkey, addr, 
 		return nil, fmt.Errorf("data is bad hex: %v", err)
 	}
 
-	tx := payload.NewCallTxWithSequence(pub, toAddress, dataBytes, amt, gas, fee, sequence)
-	return tx, nil
+	tx, err := payload.NewCallTx(pub.Address(), toAddress, sequence, dataBytes, gas, amt, fee)
+	return tx, err
 }
 
 func Name(nodeClient client.NodeClient, keyClient keys.KeyClient, pubkey, addr, amtS, sequenceS, feeS, name, data string) (*payload.NameTx, error) {
-	pub, amt, sequence, err := checkCommon(nodeClient, keyClient, pubkey, addr, amtS, sequenceS)
+	/*pub, amt, sequence, err := checkCommon(nodeClient, keyClient, pubkey, addr, amtS, sequenceS)
 	if err != nil {
 		return nil, err
 	}
@@ -98,8 +96,9 @@ func Name(nodeClient client.NodeClient, keyClient keys.KeyClient, pubkey, addr, 
 		return nil, fmt.Errorf("fee is misformatted: %v", err)
 	}
 
-	tx := payload.NewNameTxWithSequence(pub, name, data, amt, fee, sequence)
-	return tx, nil
+	 tx := payload.NewName(pub, name, data, amt, fee, sequence)
+	*/
+	return nil, nil
 }
 
 func Permissions(nodeClient client.NodeClient, keyClient keys.KeyClient, pubkey, addrS, sequenceS string,
@@ -180,7 +179,7 @@ func SignAndBroadcast(nodeClient client.NodeClient, keyClient keys.KeyClient, tx
 
 	var inputAddr crypto.Address
 	if sign {
-		inputAddr, txEnv, err = signTx(keyClient, txEnv.Tx)
+		inputAddr, txEnv, err = signTx(keyClient, &txEnv.Tx)
 		if err != nil {
 			return nil, err
 		}
@@ -239,8 +238,8 @@ func SignAndBroadcast(nodeClient client.NodeClient, keyClient keys.KeyClient, tx
 		// reasonable to get this returned from the chain directly.  Alternatively,
 		// the benefit is that the we don't need to trust the chain node
 		if tx_, ok := txEnv.Tx.Payload.(*payload.CallTx); ok {
-			if tx_.Address == nil {
-				address := crypto.NewContractAddress(tx_.Input.Address, tx_.Input.Sequence)
+			if tx_.CreatesContract() {
+				address := crypto.NewContractAddress(tx_.Caller(), tx_.Sequence())
 				txResult.Address = &address
 			}
 		}

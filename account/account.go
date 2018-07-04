@@ -24,14 +24,7 @@ import (
 	"github.com/tendermint/go-amino"
 )
 
-var GlobalPermissionsAddress = crypto.Address(binary.Zero160)
-
-type Addressable interface {
-	// Get the 20 byte EVM address of this account
-	Address() crypto.Address
-	// Public key from which the Address is derived
-	PublicKey() crypto.PublicKey
-}
+var GlobalAddress = crypto.Address(binary.Zero160)
 
 // Account structure
 type Account struct {
@@ -40,7 +33,6 @@ type Account struct {
 
 type accountData struct {
 	Address     crypto.Address
-	PublicKey   crypto.PublicKey
 	Sequence    uint64
 	Balance     uint64
 	Code        Bytecode
@@ -49,40 +41,21 @@ type accountData struct {
 }
 
 ///---- Constructors
-func NewAccount(pubKey crypto.PublicKey, permissions permission.Permissions) *Account {
+func NewAccount(address crypto.Address) *Account {
 	return &Account{
 		data: accountData{
-			Address:     pubKey.Address(),
-			PublicKey:   pubKey,
-			Permissions: permissions,
-		},
-	}
-}
-
-func NewContractAccount(address crypto.Address, permissions permission.Permissions) *Account {
-	return &Account{
-		data: accountData{
-			Address:     address,
-			PublicKey:   crypto.PublicKey{},
-			Permissions: permissions,
+			Address: address,
 		},
 	}
 }
 
 /// For tests
-func NewAccountFromSecret(secret string, permissions permission.Permissions) *Account {
-	return NewAccount(crypto.PrivateKeyFromSecret(secret, crypto.CurveTypeEd25519).GetPublicKey(),
-		permissions)
-}
-
-func NewContractAccountFromSecret(secret string, permissions permission.Permissions) *Account {
-	addr := crypto.NewContractAddress(crypto.PrivateKeyFromSecret(secret, crypto.CurveTypeEd25519).GetPublicKey().Address(), 1)
-	return NewContractAccount(addr, permissions)
+func NewAccountFromSecret(secret string) *Account {
+	return NewAccount(crypto.PrivateKeyFromSecret(secret, crypto.CurveTypeEd25519).GetPublicKey().Address())
 }
 
 ///---- Getter methods
 func (acc Account) Address() crypto.Address             { return acc.data.Address }
-func (acc Account) PublicKey() crypto.PublicKey         { return acc.data.PublicKey }
 func (acc Account) Balance() uint64                     { return acc.data.Balance }
 func (acc Account) Code() Bytecode                      { return acc.data.Code }
 func (acc Account) Sequence() uint64                    { return acc.data.Sequence }
@@ -174,6 +147,6 @@ func (acc *Account) UnmarshalJSON(bytes []byte) error {
 }
 
 func (acc Account) String() string {
-	return fmt.Sprintf("Account{Address: %s; Sequence: %v; PublicKey: %v Balance: %v; CodeBytes: %v; StorageRoot: 0x%X; Permissions: %v}",
-		acc.Address(), acc.Sequence(), acc.PublicKey(), acc.Balance(), len(acc.Code()), acc.StorageRoot(), acc.Permissions())
+	return fmt.Sprintf("Account{Address: %s; Sequence: %v Balance: %v; CodeBytes: %v; StorageRoot: 0x%X; Permissions: %v}",
+		acc.Address(), acc.Sequence(), acc.Balance(), len(acc.Code()), acc.StorageRoot(), acc.Permissions())
 }

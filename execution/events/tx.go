@@ -18,8 +18,8 @@ import (
 func EventStringAccountInput(addr crypto.Address) string  { return fmt.Sprintf("Acc/%s/Input", addr) }
 func EventStringAccountOutput(addr crypto.Address) string { return fmt.Sprintf("Acc/%s/Output", addr) }
 func EventStringNameReg(name string) string               { return fmt.Sprintf("NameReg/%s", name) }
-func EventStringPermissions(permissions permission.Permissions) string {
-	return fmt.Sprintf("Permissions/%v", permissions)
+func EventStringPermissions(perm permission.Permissions) string {
+	return fmt.Sprintf("Permissions/%v", perm)
 }
 func EventStringBond() string   { return "Bond" }
 func EventStringUnbond() string { return "Unbond" }
@@ -62,9 +62,9 @@ func PublishNameReg(publisher event.Publisher, height uint64, tx *txs.Tx) error 
 	if !ok {
 		return fmt.Errorf("Tx payload must be NameTx to PublishNameReg")
 	}
-	ev := txEvent(height, TypeAccountInput, EventStringNameReg(nameTx.Name), tx, nil, nil)
+	ev := txEvent(height, TypeAccountInput, EventStringNameReg(nameTx.Name()), tx, nil, nil)
 	return publisher.Publish(context.Background(), ev, event.CombinedTags{ev.Tags(), event.TagMap{
-		event.NameKey: nameTx.Name,
+		event.NameKey: nameTx.Name(),
 	}})
 }
 
@@ -73,9 +73,9 @@ func PublishPermissions(publisher event.Publisher, height uint64, tx *txs.Tx) er
 	if !ok {
 		return fmt.Errorf("Tx payload must be PermissionsTx to PublishPermissions")
 	}
-	ev := txEvent(height, TypeAccountInput, EventStringPermissions(permTx.Permissions), tx, nil, nil)
+	ev := txEvent(height, TypeAccountInput, EventStringPermissions(permTx.Permissions()), tx, nil, nil)
 	return publisher.Publish(context.Background(), ev, event.CombinedTags{ev.Tags(), event.TagMap{
-		event.PermissionKey: permTx.Permissions.String(),
+		event.PermissionKey: permTx.Permissions().String(),
 	}})
 }
 

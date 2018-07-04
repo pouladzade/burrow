@@ -1,7 +1,6 @@
 package test
 
 import (
-	"fmt"
 	"math/rand"
 	"testing"
 	"time"
@@ -27,17 +26,18 @@ func setupGenesisDoc(m *testing.M) {
 	}
 
 	for i := 0; i < numValidators; i++ {
-		secret := fmt.Sprintf("validator_%d", i)
 		balance := rand.New(rand.NewSource(int64(i))).Uint64()
-		account := acm.NewAccountFromSecret(secret, permission.DefaultAccountPermissions)
+		privateKey, _ := crypto.GeneratePrivateKey(nil, crypto.CurveTypeEd25519)
+		publicKey := privateKey.GetPublicKey()
+		account := acm.NewAccount(publicKey.Address())
 
 		account.AddToBalance(balance)
 
-		validator := acm.AsValidator(account)
+		validator := acm.AsValidator(account, publicKey)
 
 		validators[i] = validator
 	}
-	genesisDoc = genesis.MakeGenesisDoc("test-chain", nil, time.Now(), permission.ZeroAccountPermissions, names, accounts, validators)
+	genesisDoc = genesis.MakeGenesisDoc("test-chain", nil, time.Now(), permission.ZeroPermissions, names, accounts, validators)
 	chainID = genesisDoc.ChainID()
 }
 

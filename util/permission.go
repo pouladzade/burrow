@@ -17,7 +17,6 @@ package util
 import (
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/account/state"
-	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/permission"
 )
 
@@ -34,7 +33,7 @@ func HasPermissions(getter state.AccountGetter, account *acm.Account, permission
 		return false
 	}
 
-	globalAccount, err := getter.GetAccount(acm.GlobalPermissionsAddress)
+	globalAccount, err := getter.GetAccount(acm.GlobalAddress)
 	if err != nil {
 		return false
 	}
@@ -48,24 +47,6 @@ func HasPermissions(getter state.AccountGetter, account *acm.Account, permission
 	}
 
 	return false
-}
-
-func HaveSendPermission(accountGetter state.AccountGetter, accs map[crypto.Address]*acm.Account) bool {
-	for _, acc := range accs {
-		if !HasSendPermission(accountGetter, acc) {
-			return false
-		}
-	}
-	return true
-}
-
-func HaveCreateAccountPermission(accountGetter state.AccountGetter, accs map[crypto.Address]*acm.Account) bool {
-	for _, acc := range accs {
-		if !HasCreateAccountPermission(accountGetter, acc) {
-			return false
-		}
-	}
-	return true
 }
 
 func HasSendPermission(accountGetter state.AccountGetter, acc *acm.Account) bool {

@@ -22,7 +22,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/hyperledger/burrow/permission"
+	e "github.com/hyperledger/burrow/errors"
 
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/account/state"
@@ -31,7 +31,6 @@ import (
 	"github.com/hyperledger/burrow/consensus/tendermint/codes"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/event"
-	"github.com/hyperledger/burrow/execution/errors"
 	"github.com/hyperledger/burrow/execution/events"
 	"github.com/hyperledger/burrow/execution/evm"
 	"github.com/hyperledger/burrow/execution/executors"
@@ -90,7 +89,7 @@ func (trans *Transactor) Call(reader state.Reader, fromAddress, toAddress crypto
 	if callee == nil {
 		return nil, fmt.Errorf("account %s does not exist", toAddress)
 	}
-	caller := acm.NewContractAccount(fromAddress, permission.ZeroAccountPermissions)
+	caller := acm.NewAccount(fromAddress)
 	txCache := state.NewCache(reader)
 	params := vmParams(trans.tip)
 
@@ -115,8 +114,8 @@ func (trans *Transactor) Call(reader state.Reader, fromAddress, toAddress crypto
 // Cannot be used to create new contracts.
 func (trans *Transactor) CallCode(reader state.Reader, fromAddress crypto.Address, code, data []byte) (*Call, error) {
 	// This was being run against CheckTx cache, need to understand the reasoning
-	callee := acm.NewContractAccount(fromAddress, permission.ZeroAccountPermissions)
-	caller := acm.NewContractAccount(fromAddress, permission.ZeroAccountPermissions)
+	callee := acm.NewAccount(fromAddress)
+	caller := acm.NewAccount(fromAddress)
 	txCache := state.NewCache(reader)
 	params := vmParams(trans.tip)
 
@@ -135,10 +134,6 @@ func (trans *Transactor) BroadcastTxAsyncRaw(txBytes []byte, callback func(res *
 }
 
 func (trans *Transactor) BroadcastTxAsync(txEnv *txs.Envelope, callback func(res *abciTypes.Response)) error {
-	err := txEnv.Validate()
-	if err != nil {
-		return err
-	}
 	txBytes, err := trans.txEncoder.EncodeTx(txEnv)
 	if err != nil {
 		return fmt.Errorf("error encoding transaction: %v", err)
@@ -152,10 +147,7 @@ func (trans *Transactor) BroadcastTx(txEnv *txs.Envelope) (*txs.Receipt, error) 
 	trans.logger.Trace.Log("method", "BroadcastTx",
 		"tx_hash", txEnv.Tx.Hash(),
 		"tx", txEnv.String())
-	err := txEnv.Validate()
-	if err != nil {
-		return nil, err
-	}
+
 	txBytes, err := trans.txEncoder.EncodeTx(txEnv)
 	if err != nil {
 		return nil, err
@@ -262,7 +254,7 @@ func (trans *Transactor) TransactAndHold(ctx context.Context, sequentialSigningA
 	case <-timer.C:
 		return nil, fmt.Errorf("transaction timed out TxHash: %X", expectedReceipt.TxHash)
 	case eventDataCall := <-ch:
-		if eventDataCall.Exception != nil && eventDataCall.Exception.ErrorCode() != errors.ErrorCodeExecutionReverted {
+		if eventDataCall.Exception != nil && e.Code(eventDataCall.Exception) != e.ErrVMExecutionReverted {
 			return nil, fmt.Errorf("error when transacting: %v", eventDataCall.Exception)
 		} else {
 			return eventDataCall, nil
@@ -272,22 +264,18 @@ func (trans *Transactor) TransactAndHold(ctx context.Context, sequentialSigningA
 func (trans *Transactor) formulateCallTx(inputAccount *SigningAccount, address *crypto.Address, data []byte,
 	gasLimit, fee uint64) (*txs.Envelope, error) {
 
-	txInput := &payload.TxInput{
-		Address:  inputAccount.Address(),
-		Amount:   fee,
-		Sequence: inputAccount.Sequence() + 1,
-	}
-	tx := &payload.CallTx{
-		Input:    txInput,
-		Address:  address,
-		GasLimit: gasLimit,
-		Fee:      fee,
-		Data:     data,
+	address2 := crypto.Address{}
+	if address != nil {
+		address2 = *address
 	}
 
+	tx, err := payload.NewCallTx(inputAccount.Address(), address2, inputAccount.Sequence()+1, data, gasLimit, 0, fee)
+	if err != nil {
+		return nil, err
+	}
 	env := txs.Enclose(trans.tip.ChainID(), tx)
 	// Got ourselves a tx.
-	err := env.Sign(inputAccount)
+	err = env.Sign(inputAccount)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +346,7 @@ func (trans *Transactor) SendAndHold(ctx context.Context, sequentialSigningAccou
 		return nil, fmt.Errorf("transaction timed out TxHash: %X", expectedReceipt.TxHash)
 	case sendTx := <-wc:
 		// This is a double check - we subscribed to this tx's hash so something has gone wrong if the amounts don't match
-		if sendTx.Inputs[0].Amount == amount {
+		if sendTx.Inputs()[0].Amount == amount {
 			return expectedReceipt, nil
 		}
 		return nil, fmt.Errorf("received SendTx but hash doesn't seem to match what we subscribed to, "+
@@ -369,15 +357,7 @@ func (trans *Transactor) SendAndHold(ctx context.Context, sequentialSigningAccou
 func (trans *Transactor) formulateSendTx(inputAccount *SigningAccount, toAddress crypto.Address,
 	amount uint64) (*txs.Envelope, error) {
 
-	sendTx := payload.NewSendTx()
-	txInput := &payload.TxInput{
-		Address:  inputAccount.Address(),
-		Amount:   amount,
-		Sequence: inputAccount.Sequence() + 1,
-	}
-	sendTx.Inputs = append(sendTx.Inputs, txInput)
-	txOutput := &payload.TxOutput{Address: toAddress, Amount: amount}
-	sendTx.Outputs = append(sendTx.Outputs, txOutput)
+	sendTx, _ := payload.NewSendTx(inputAccount.Address(), toAddress, inputAccount.Sequence()+1, amount, 0)
 
 	env := txs.Enclose(trans.tip.ChainID(), sendTx)
 	err := env.Sign(inputAccount)
@@ -390,20 +370,22 @@ func (trans *Transactor) formulateSendTx(inputAccount *SigningAccount, toAddress
 
 func (trans *Transactor) TransactNameReg(sequentialSigningAccount *SequentialSigningAccount, name, data string, amount,
 	fee uint64) (*txs.Receipt, error) {
-
-	inputAccount, unlock, err := sequentialSigningAccount.Lock()
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
-	// Formulate and sign
-	tx := payload.NewNameTxWithSequence(inputAccount.PublicKey(), name, data, amount, fee, inputAccount.Sequence()+1)
-	env := txs.Enclose(trans.tip.ChainID(), tx)
-	err = env.Sign(inputAccount)
-	if err != nil {
-		return nil, err
-	}
-	return trans.BroadcastTx(env)
+	/*
+		inputAccount, unlock, err := sequentialSigningAccount.Lock()
+		if err != nil {
+			return nil, err
+		}
+		defer unlock()
+		// Formulate and sign
+		tx := payload.NewNameTxWithSequence(inputAccount.PublicKey(), name, data, amount, fee, inputAccount.Sequence()+1)
+		env := txs.Enclose(trans.tip.ChainID(), tx)
+		err = env.Sign(inputAccount)
+		if err != nil {
+			return nil, err
+		}
+		return trans.BroadcastTx(env)
+	*/
+	return nil, nil
 }
 
 // Sign a transaction

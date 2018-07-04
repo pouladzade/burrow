@@ -1,9 +1,8 @@
 package payload
 
 import (
-	"fmt"
-
 	"github.com/hyperledger/burrow/crypto"
+	"github.com/hyperledger/burrow/errors"
 )
 
 type TxInput struct {
@@ -14,14 +13,10 @@ type TxInput struct {
 
 func (txIn *TxInput) ValidateBasic() error {
 	if txIn.Address == crypto.ZeroAddress {
-		return ErrTxInvalidAddress
+		return e.Error(e.ErrTxInvalidAddress)
 	}
 	if txIn.Amount == 0 {
-		return ErrTxInvalidAmount
+		return e.Error(e.ErrTxInvalidAmount)
 	}
 	return nil
-}
-
-func (txIn *TxInput) String() string {
-	return fmt.Sprintf("TxInput{%s, Amt: %v, Seq:%v}", txIn.Address, txIn.Amount, txIn.Sequence)
 }

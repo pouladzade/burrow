@@ -156,15 +156,15 @@ func (exe *executor) Execute(txEnv *txs.Envelope) (err error) {
 	logger.TraceMsg("Executing transaction", "tx", txEnv.String())
 
 	// Verify transaction signature against inputs
-	err = txEnv.Verify(exe.stateCache)
+	err = txEnv.Verify()
 	if err != nil {
 		return err
 	}
 
-	if txExecutor, ok := exe.txExecutors[txEnv.Tx.Type()]; ok {
+	if txExecutor, ok := exe.txExecutors[txEnv.Tx.Payload.Type()]; ok {
 		return txExecutor.Execute(txEnv)
 	}
-	return fmt.Errorf("unknown transaction type: %v", txEnv.Tx.Type())
+	return fmt.Errorf("unknown transaction type: %v", txEnv.Tx.Payload.Type())
 }
 
 func (exe *executor) Commit() (_ []byte, err error) {

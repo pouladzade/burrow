@@ -90,17 +90,14 @@ func GetAccount(getter AccountGetter, address crypto.Address) (*acm.Account, err
 }
 
 func GlobalPermissionsAccount(getter AccountGetter) *acm.Account {
-	acc, err := getter.GetAccount(acm.GlobalPermissionsAddress)
+	acc, err := getter.GetAccount(acm.GlobalAddress)
 	if err != nil {
 		panic("Could not get global permission account, but this must exist")
 	}
 	return acc
 }
 
-// Get global permissions from the account at GlobalPermissionsAddress
+// Get global permissions from the account at GlobalAddress
 func GlobalAccountPermissions(getter AccountGetter) permission.Permissions {
-	if getter == nil {
-		return permission.ZeroAccountPermissions
-	}
 	return GlobalPermissionsAccount(getter).Permissions()
 }

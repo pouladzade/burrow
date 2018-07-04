@@ -19,7 +19,6 @@ import (
 	. "github.com/hyperledger/burrow/client"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/logging"
-	"github.com/hyperledger/burrow/permission"
 	"github.com/hyperledger/burrow/rpc"
 	"github.com/hyperledger/burrow/txs"
 )
@@ -51,7 +50,7 @@ func (mock *MockNodeClient) DeriveWebsocketClient() (nodeWsClient NodeWebsocketC
 
 func (mock *MockNodeClient) GetAccount(address crypto.Address) (*acm.Account, error) {
 	// make zero account
-	acc := acm.NewAccountFromSecret("mock-node-client-account", permission.DefaultAccountPermissions)
+	acc := acm.NewAccountFromSecret("mock-node-client-account")
 	acc.AddToBalance(100)
 	return acc, nil
 }

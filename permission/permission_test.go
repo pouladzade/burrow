@@ -6,10 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestAllPermissions(t *testing.T) {
-	assert.Equal(t, AllAccountPermissions, DefaultAccountPermissions|ModifyPermission|CreateChain|InterChainTx)
-}
-
 func TestValidity(t *testing.T) {
 	p1 := Reserved
 	p2 := Permissions(0xFFFFFFFFFFFFFFFF)

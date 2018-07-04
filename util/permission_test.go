@@ -12,8 +12,9 @@ import (
 type fakeAccountGetter struct{}
 
 func (fakeAccountGetter) GetAccount(address crypto.Address) (*acm.Account, error) {
-	if address == acm.GlobalPermissionsAddress {
-		globalAccount := acm.NewContractAccount(acm.GlobalPermissionsAddress, permission.Send|permission.Bond)
+	if address == acm.GlobalAddress {
+		globalAccount := acm.NewAccount(acm.GlobalAddress)
+		globalAccount.SetPermissions(permission.Send | permission.Bond)
 		return globalAccount, nil
 	}
 
@@ -23,10 +24,14 @@ func (fakeAccountGetter) GetAccount(address crypto.Address) (*acm.Account, error
 func TestHasPermission(t *testing.T) {
 	var fakeGetter fakeAccountGetter
 
-	acc := acm.NewAccountFromSecret("test", permission.Call)
+	acc := acm.NewAccountFromSecret("test")
+	acc.SetPermissions(permission.Call)
 	// Ensure we are falling through to global permissions on those bits not set
 	assert.True(t, HasPermissions(fakeGetter, acc, permission.Call))
 	assert.True(t, HasPermissions(fakeGetter, acc, permission.Send))
 	assert.False(t, HasPermissions(fakeGetter, acc, permission.CreateAccount))
+
+	acc.UnsetPermissions(permission.Call)
+	assert.False(t, HasPermissions(fakeGetter, acc, permission.Call))
 
 }

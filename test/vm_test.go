@@ -21,12 +21,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hyperledger/burrow/errors"
+
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/account/state"
 	. "github.com/hyperledger/burrow/binary"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/event"
-	"github.com/hyperledger/burrow/execution/errors"
 	"github.com/hyperledger/burrow/execution/events"
 	"github.com/hyperledger/burrow/execution/evm"
 	. "github.com/hyperledger/burrow/execution/evm/asm"
@@ -41,8 +42,8 @@ var defaultGas uint64 = 100000
 
 func setupEVM(m *testing.M) {
 	// For default permissions
-	acc := acm.NewContractAccount(acm.GlobalPermissionsAddress, permission.ZeroAccountPermissions)
-	acc.SetPermissions(permission.DefaultAccountPermissions)
+	acc := acm.NewAccount(acm.GlobalAddress)
+	acc.SetPermissions(permission.DefaultPermissions)
 
 	evm1Cache = state.NewCache(bc1State)
 	evm1 = evm.NewVM(newParams(), crypto.ZeroAddress, nil, nopLogger)
@@ -57,7 +58,7 @@ func newParams() evm.Params {
 	}
 }
 
-func callAndCheck(t *testing.T, shoudlFail bool, contractCode []byte, contractBalance uint64, bytecode, input []byte, value, gas uint64) (output []byte, err error) {
+func callAndCheck(t *testing.T, errorCode int, contractCode []byte, contractBalance uint64, bytecode, input []byte, value, gas uint64) (output []byte, err error) {
 	caller := getAccount(t, "vbuterin")
 	callee, _ := makeContractAccount(t, contractCode, contractBalance, permission.Call)
 
@@ -65,7 +66,7 @@ func callAndCheck(t *testing.T, shoudlFail bool, contractCode []byte, contractBa
 	output, err = evm1.Call(evm1Cache, caller, callee, bytecode, input, value, &gas)
 	fmt.Printf("Output: %v Error: %v\n", output, err)
 	fmt.Println("Call took:", time.Since(start))
-	if shoudlFail {
+	if errorCode != e.ErrNone {
 		require.Error(t, err)
 	} else {
 		require.NoError(t, err)
@@ -115,18 +116,6 @@ func runVM(t *testing.T, eventCh chan<- *events.EventDataCall, caller, callee *a
 	fmt.Println("Call took:", time.Since(start))
 	evc.Flush(emitter)
 	return output, err
-}
-
-// this is code to call another contract (hardcoded as addr)
-func SendFundsToContract(addr crypto.Address, amount byte) []byte {
-	gas1, gas2 := byte(0x1), byte(0x1)
-	value := amount
-	inOff, inSize := byte(0x0), byte(0x0) // no call data
-	retOff, retSize := byte(0x0), byte(0x20)
-	// this is the code we want to run (send funds to an account and return)
-	return MustSplice(PUSH1, retSize, PUSH1, retOff, PUSH1, inSize, PUSH1,
-		inOff, PUSH1, value, PUSH20, addr, PUSH2, gas1, gas2, CALL, PUSH1, retSize,
-		PUSH1, retOff, RETURN)
 }
 
 // convenience function for contract that calls a given address
@@ -180,14 +169,14 @@ func TestVM(t *testing.T) {
 		SLT, ISZERO, PUSH1, 0x1D, JUMPI, PUSH1, 0x01, PUSH1, 0x20, MLOAD, ADD, PUSH1, 0x20,
 		MSTORE, PUSH1, 0x05, JUMP, JUMPDEST)
 
-	callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 }
 
 func TestSHL(t *testing.T) {
 	//Shift left 0
 	bytecode := MustSplice(PUSH1, 0x01, PUSH1, 0x00, SHL, return1())
 
-	output, _ := callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ := callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value := []uint8([]byte{0x1})
 	expected := LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -197,7 +186,7 @@ func TestSHL(t *testing.T) {
 	//Alternative shift left 0
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0x00, SHL, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
 
@@ -207,7 +196,7 @@ func TestSHL(t *testing.T) {
 
 	//Shift left 1
 	bytecode = MustSplice(PUSH1, 0x01, PUSH1, 0x01, SHL, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x2})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -217,7 +206,7 @@ func TestSHL(t *testing.T) {
 	//Alternative shift left 1
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0x01, SHL, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE})
 
@@ -228,7 +217,7 @@ func TestSHL(t *testing.T) {
 	//Alternative shift left 1
 	bytecode = MustSplice(PUSH32, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0x01, SHL, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE})
 
@@ -238,7 +227,7 @@ func TestSHL(t *testing.T) {
 
 	//Shift left 255
 	bytecode = MustSplice(PUSH1, 0x01, PUSH1, 0xFF, SHL, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x80})
 	expected = RightPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -248,7 +237,7 @@ func TestSHL(t *testing.T) {
 	//Alternative shift left 255
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0xFF, SHL, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x80})
 	expected = RightPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -257,7 +246,7 @@ func TestSHL(t *testing.T) {
 
 	//Shift left 256 (overflow)
 	bytecode = MustSplice(PUSH1, 0x01, PUSH2, 0x01, 0x00, SHL, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x00})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -268,7 +257,7 @@ func TestSHL(t *testing.T) {
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH2, 0x01, 0x00, SHL,
 		return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x00})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -277,7 +266,7 @@ func TestSHL(t *testing.T) {
 
 	//Shift left 257 (overflow)
 	bytecode = MustSplice(PUSH1, 0x01, PUSH2, 0x01, 0x01, SHL, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x00})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -288,7 +277,7 @@ func TestSHL(t *testing.T) {
 func TestSHR(t *testing.T) {
 	//Shift right 0
 	bytecode := MustSplice(PUSH1, 0x01, PUSH1, 0x00, SHR, return1())
-	output, _ := callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ := callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value := []uint8([]byte{0x1})
 	expected := LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -298,7 +287,7 @@ func TestSHR(t *testing.T) {
 	//Alternative shift right 0
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0x00, SHR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
 
@@ -308,7 +297,7 @@ func TestSHR(t *testing.T) {
 
 	//Shift right 1
 	bytecode = MustSplice(PUSH1, 0x01, PUSH1, 0x01, SHR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x00})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -318,7 +307,7 @@ func TestSHR(t *testing.T) {
 	//Alternative shift right 1
 	bytecode = MustSplice(PUSH32, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, PUSH1, 0x01, SHR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x40})
 	expected = RightPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -328,7 +317,7 @@ func TestSHR(t *testing.T) {
 	//Alternative shift right 1
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0x01, SHR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
 
@@ -339,7 +328,7 @@ func TestSHR(t *testing.T) {
 	//Shift right 255
 	bytecode = MustSplice(PUSH32, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, PUSH1, 0xFF, SHR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x1})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -349,7 +338,7 @@ func TestSHR(t *testing.T) {
 	//Alternative shift right 255
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0xFF, SHR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x1})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -360,7 +349,7 @@ func TestSHR(t *testing.T) {
 	bytecode = MustSplice(PUSH32, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, PUSH2, 0x01, 0x00, SHR,
 		return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x00})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -371,7 +360,7 @@ func TestSHR(t *testing.T) {
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH2, 0x01, 0x00, SHR,
 		return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x00})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -382,7 +371,7 @@ func TestSHR(t *testing.T) {
 	bytecode = MustSplice(PUSH32, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, PUSH2, 0x01, 0x01, SHR,
 		return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x00})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -393,7 +382,7 @@ func TestSHR(t *testing.T) {
 func TestSAR(t *testing.T) {
 	//Shift arith right 0
 	bytecode := MustSplice(PUSH1, 0x01, PUSH1, 0x00, SAR, return1())
-	output, _ := callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ := callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value := []uint8([]byte{0x1})
 	expected := LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -403,7 +392,7 @@ func TestSAR(t *testing.T) {
 	//Alternative arith shift right 0
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0x00, SAR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
 
@@ -413,7 +402,7 @@ func TestSAR(t *testing.T) {
 
 	//Shift arith right 1
 	bytecode = MustSplice(PUSH1, 0x01, PUSH1, 0x01, SAR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x00})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -423,7 +412,7 @@ func TestSAR(t *testing.T) {
 	//Alternative shift arith right 1
 	bytecode = MustSplice(PUSH32, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, PUSH1, 0x01, SAR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0xc0})
 	expected = RightPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -433,7 +422,7 @@ func TestSAR(t *testing.T) {
 	//Alternative shift arith right 1
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0x01, SAR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
 
@@ -444,7 +433,7 @@ func TestSAR(t *testing.T) {
 	//Shift arith right 255
 	bytecode = MustSplice(PUSH32, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, PUSH1, 0xFF, SAR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
 
@@ -455,7 +444,7 @@ func TestSAR(t *testing.T) {
 	//Alternative shift arith right 255
 	bytecode = MustSplice(PUSH32, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0xFF, SAR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
 
@@ -466,7 +455,7 @@ func TestSAR(t *testing.T) {
 	//Alternative shift arith right 255
 	bytecode = MustSplice(PUSH32, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH1, 0xFF, SAR, return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x00})
 	expected = RightPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -477,7 +466,7 @@ func TestSAR(t *testing.T) {
 	bytecode = MustSplice(PUSH32, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, PUSH2, 0x01, 0x00, SAR,
 		return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
 
@@ -489,7 +478,7 @@ func TestSAR(t *testing.T) {
 	bytecode = MustSplice(PUSH32, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, PUSH2, 0x01, 0x00, SAR,
 		return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	value = []uint8([]byte{0x00})
 	expected = LeftPadBytes(value, 32)
 	assert.Equal(t, expected, output)
@@ -500,7 +489,7 @@ func TestSAR(t *testing.T) {
 	bytecode = MustSplice(PUSH32, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, PUSH2, 0x01, 0x01, SAR,
 		return1())
-	output, _ = callAndCheck(t, false, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ = callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	expected = []uint8([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
 
@@ -516,7 +505,7 @@ func TestJumpErr(t *testing.T) {
 	var err error
 	ch := make(chan struct{})
 	go func() {
-		_, err = callAndCheck(t, true, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+		_, err = callAndCheck(t, e.ErrVMInvalidJumpDest, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 		ch <- struct{}{}
 	}()
 	tick := time.NewTicker(time.Second * 2)
@@ -547,7 +536,7 @@ func TestSubcurrency(t *testing.T) {
 		JUMPDEST, POP, JUMPDEST, PUSH1, 0x00, RETURN)
 
 	data, _ := hex.DecodeString("693200CE0000000000000000000000004B4363CDE27C2EB05E66357DB05BC5C88F850C1A0000000000000000000000000000000000000000000000000000000000000005")
-	output, _ := callAndCheck(t, false, []byte{}, 0, bytecode, data, 0, defaultGas)
+	output, _ := callAndCheck(t, e.ErrNone, []byte{}, 0, bytecode, data, 0, defaultGas)
 	fmt.Println(output)
 }
 
@@ -566,7 +555,7 @@ func TestRevert(t *testing.T) {
 	0x67, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, PUSH1, 0x00, MSTORE, PUSH1, 0x0E, PUSH1, 0x00, REVERT)*/
 
-	output, _ := callAndCheck(t, true, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
+	output, _ := callAndCheck(t, e.ErrVMExecutionReverted, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 
 	storageVal, err := evm1Cache.GetStorage(accountPool["satoshi"].Address(), LeftPadWord256(key))
 	assert.Equal(t, LeftPadWord256(value), storageVal)
@@ -646,7 +635,7 @@ func TestDelegateCallGas(t *testing.T) {
 		// Give just enough gas to make the DELEGATECALL
 		costBetweenGasAndDelegateCall,
 		callerCodeSuffix)
-	callerAccount, _ := makeContractAccount(t, code, 10000, permission.ZeroAccountPermissions)
+	callerAccount, _ := makeContractAccount(t, code, 10000, permission.ZeroPermissions)
 
 	// Should pass
 	output, err := runVMWaitError(t, callerAccount, calleeAccount, calleeAddress,
@@ -660,8 +649,7 @@ func TestDelegateCallGas(t *testing.T) {
 		callerCodeSuffix))
 
 	// Should fail
-	_, err = runVMWaitError(t, callerAccount, calleeAccount, calleeAddress,
-		callerAccount.Code(), 100)
+	_, err = runVMWaitError(t, callerAccount, calleeAccount, calleeAddress, callerAccount.Code(), 100)
 	assert.Error(t, err, "Should have insufficient gas for call")
 }
 
@@ -671,8 +659,8 @@ func TestMemoryBounds(t *testing.T) {
 		return evm.NewDynamicMemory(1024, 2048)
 	}
 	ourVM := evm.NewVM(newParams(), crypto.ZeroAddress, nil, nopLogger, evm.MemoryProvider(memoryProvider))
-	caller, _ := makeContractAccount(t, nil, 10000, permission.ZeroAccountPermissions)
-	callee, _ := makeContractAccount(t, nil, 10000, permission.ZeroAccountPermissions)
+	caller, _ := makeContractAccount(t, nil, 10000, permission.ZeroPermissions)
+	callee, _ := makeContractAccount(t, nil, 10000, permission.ZeroPermissions)
 
 	// This attempts to store a value at the memory boundary and return it
 	word := One256
@@ -730,7 +718,7 @@ func TestMsgSender(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run the contract initialisation code to obtain the contract code that would be mounted at account2
-	contractCode, _ := callAndCheck(t, false, []byte{}, 0, code, code, 0, defaultGas)
+	contractCode, _ := callAndCheck(t, e.ErrNone, []byte{}, 0, code, code, 0, defaultGas)
 
 	// Not needed for this test (since contract code is passed as argument to vm), but this is what an execution
 	// framework must do
@@ -738,7 +726,7 @@ func TestMsgSender(t *testing.T) {
 	// Input is the function hash of `get()`
 	input, err := hex.DecodeString("6d4ce63c")
 
-	output, _ := callAndCheck(t, false, contractCode, 0, contractCode, input, 0, defaultGas)
+	output, _ := callAndCheck(t, e.ErrNone, contractCode, 0, contractCode, input, 0, defaultGas)
 
 	assert.Equal(t, getAccount(t, "vbuterin").Address().Word256().Bytes(), output)
 
@@ -749,11 +737,8 @@ func TestInvalid(t *testing.T) {
 		0x67, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, PUSH1, 0x00, MSTORE, PUSH1, 0x0E, PUSH1, 0x00, INVALID)
 
-	output, err := callAndCheck(t, true, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
-	expected := errors.ErrorCodeExecutionAborted.Error()
-	assert.EqualError(t, err, expected)
+	output, err := callAndCheck(t, e.ErrVMExecutionAborted, []byte{}, 0, bytecode, []byte{}, 0, defaultGas)
 	t.Logf("Output: %v Error: %v\n", output, err)
-
 }
 
 func TestReturnDataSize(t *testing.T) {
@@ -763,7 +748,8 @@ func TestReturnDataSize(t *testing.T) {
 
 	accountName := "account2addresstests"
 	address, _ := crypto.AddressFromBytes([]byte(accountName)) ///0x6163636F756E7432616464726573737465737473
-	acc := acm.NewContractAccount(address, permission.Call)
+	acc := acm.NewAccount(address)
+	acc.SetPermissions(permission.Call)
 	acc.SetCode(callcode)
 	evm1Cache.UpdateAccount(acc)
 
@@ -778,7 +764,7 @@ func TestReturnDataSize(t *testing.T) {
 
 	expected := LeftPadBytes([]byte{0x0E}, 32)
 
-	output, _ := callAndCheck(t, false, []byte{}, 1000, bytecode, []byte{}, 0, defaultGas)
+	output, _ := callAndCheck(t, e.ErrNone, []byte{}, 1000, bytecode, []byte{}, 0, defaultGas)
 	assert.Equal(t, expected, output)
 }
 
@@ -789,7 +775,7 @@ func TestReturnDataCopy(t *testing.T) {
 
 	accountName := "account2addresstests"
 	address, _ := crypto.AddressFromBytes([]byte(accountName)) ///0x6163636F756E7432616464726573737465737473
-	acc := acm.NewContractAccount(address, permission.DefaultAccountPermissions)
+	acc := acm.NewAccount(address)
 	acc.SetCode(callcode)
 	evm1Cache.UpdateAccount(acc)
 
@@ -805,7 +791,7 @@ func TestReturnDataCopy(t *testing.T) {
 
 	expected := []byte{0x72, 0x65, 0x76, 0x65, 0x72, 0x74, 0x20, 0x6D, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65}
 
-	output, _ := callAndCheck(t, false, []byte{}, 1000, bytecode, []byte{}, 0, defaultGas)
+	output, _ := callAndCheck(t, e.ErrNone, []byte{}, 1000, bytecode, []byte{}, 0, defaultGas)
 
 	assert.Equal(t, expected, output)
 

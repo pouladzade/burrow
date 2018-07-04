@@ -22,7 +22,6 @@ import (
 	"github.com/hyperledger/burrow/crypto"
 	. "github.com/hyperledger/burrow/execution/evm/asm"
 	. "github.com/hyperledger/burrow/execution/evm/asm/bc"
-	"github.com/hyperledger/burrow/permission"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -98,7 +97,7 @@ func TestBytecode(t *testing.T) {
 		[]byte{},
 		MustSplice(MustSplice(MustSplice())))
 
-	contractAccount := acm.NewContractAccount(crypto.AddressFromWord256(Int64ToWord256(102)), permission.ZeroAccountPermissions)
+	contractAccount := acm.NewAccount(crypto.AddressFromWord256(Int64ToWord256(102)))
 	addr := contractAccount.Address()
 	gas1, gas2 := byte(0x1), byte(0x1)
 	value := byte(0x69)

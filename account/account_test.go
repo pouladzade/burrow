@@ -16,7 +16,6 @@ package account
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/hyperledger/burrow/crypto"
@@ -47,7 +46,7 @@ func TestAddress(t *testing.T) {
 }
 
 func TestDecode(t *testing.T) {
-	acc := NewAccountFromSecret("Super Semi Secret", permission.DefaultAccountPermissions)
+	acc := NewAccountFromSecret("Super Semi Secret")
 	acc.AddToBalance(100)
 
 	encodedAcc, err := acc.Encode()
@@ -62,26 +61,30 @@ func TestDecode(t *testing.T) {
 }
 
 func TestMarshalJSON(t *testing.T) {
-	acc := NewContractAccountFromSecret("Super Semi Secret", permission.ZeroAccountPermissions)
-	acc.AddToBalance(100)
-	acc.SetCode([]byte{60, 23, 45})
+	acc1 := NewAccountFromSecret("Secret")
+	acc1.SetPermissions(permission.Send | permission.CreateContract)
+	acc1.AddToBalance(100)
+	acc1.IncSequence()
+	acc1.SetStorageRoot([]byte{1, 2, 3, 4, 5})
+	acc1.SetCode([]byte{60, 23, 45})
 
-	bs, err := json.Marshal(acc)
+	bs, err1 := json.Marshal(acc1)
+	require.NoError(t, err1)
 
-	expected := fmt.Sprintf(`{"Address":"%s","PublicKey":{"CurveType":"secp256k1","PublicKey":"%s"},`+
-		`"Sequence":0,"Balance":100,"Code":"3C172D","StorageRoot":null,`+
-		`"Permissions":0}`,
-		acc.Address(), acc.PublicKey())
-	assert.Equal(t, expected, string(bs))
-	assert.NoError(t, err)
+	var acc2 Account
+	err2 := json.Unmarshal(bs, &acc2)
+	require.NoError(t, err2)
+
+	assert.Equal(t, *acc1, acc2)
 }
 
 func TestPermissions(t *testing.T) {
-	account := NewAccountFromSecret("Super Semi Secret", permission.DefaultAccountPermissions)
-	assert.Equal(t, account.Permissions(), permission.DefaultAccountPermissions)
+	account := NewAccountFromSecret("Super Semi Secret")
+	account.SetPermissions(permission.Call)
+	assert.Equal(t, account.Permissions(), permission.Call)
 	account.SetPermissions(permission.CreateChain)
-	assert.Equal(t, account.Permissions(), permission.DefaultAccountPermissions|permission.CreateChain)
+	assert.Equal(t, account.Permissions(), permission.Call|permission.CreateChain)
 	assert.Equal(t, account.HasPermissions(permission.InterChainTx), false)
 	account.UnsetPermissions(permission.CreateChain)
-	assert.Equal(t, account.Permissions(), permission.DefaultAccountPermissions)
+	assert.Equal(t, account.Permissions(), permission.Call)
 }

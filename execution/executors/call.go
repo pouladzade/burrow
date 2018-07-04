@@ -2,7 +2,6 @@ package executors
 
 import (
 	"fmt"
-
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/account/state"
 	"github.com/hyperledger/burrow/binary"
@@ -13,9 +12,9 @@ import (
 	"github.com/hyperledger/burrow/execution/evm"
 	"github.com/hyperledger/burrow/logging"
 	"github.com/hyperledger/burrow/logging/structure"
+	"github.com/hyperledger/burrow/permission"
 	"github.com/hyperledger/burrow/txs"
 	"github.com/hyperledger/burrow/txs/payload"
-	"github.com/hyperledger/burrow/util"
 )
 
 // TODO: make configurable
@@ -28,139 +27,84 @@ type CallContext struct {
 	RunCall        bool
 	VMOptions      []func(*evm.VM)
 	Logger         *logging.Logger
-	tx             *payload.CallTx
 	txEnv          *txs.Envelope
 }
 
 func (ctx *CallContext) Execute(txEnv *txs.Envelope) error {
-	var ok bool
-	ctx.tx, ok = txEnv.Tx.Payload.(*payload.CallTx)
+	tx, ok := txEnv.Tx.Payload.(*payload.CallTx)
 	if !ok {
 		return fmt.Errorf("payload must be CallTx, but is: %v", txEnv.Tx.Payload)
 	}
 	ctx.txEnv = txEnv
-	inAcc, outAcc, err := ctx.Precheck()
+
+	var requiredPermissions permission.Permissions
+	var caller, callee *acm.Account
+
+	if tx.CreatesContract() {
+		requiredPermissions = permission.CreateContract
+	} else {
+		requiredPermissions = permission.Call
+	}
+
+	accounts, err := checkTx(ctx.StateWriter, tx, requiredPermissions)
 	if err != nil {
 		return err
 	}
-	// That the fee less than the input amount is checked by Precheck
-	value := ctx.tx.Input.Amount - ctx.tx.Fee
+	caller, ok = accounts[tx.Caller()]
+	callee, ok = accounts[tx.Callee()]
+
+	err = caller.SubtractFromBalance(tx.Fee())
+	if err != nil {
+		return err
+	}
+	ctx.StateWriter.UpdateAccount(caller)
+
+	if tx.CreatesContract() {
+		caller.IncSequence()
+	} else {
+		// check if its a native contract
+		if evm.IsRegisteredNativeContract(tx.Callee().Word256()) {
+			return fmt.Errorf("attempt to call a native contract at %s, "+
+				"but native contracts cannot be called using CallTx. Use a "+
+				"contract that calls the native contract or the appropriate tx "+
+				"type (eg. PermissionsTx, NameTx)", tx.Callee())
+		}
+
+		if callee == nil {
+			// Output account may be nil if we are still in mempool and contract was created in same block as this tx
+			// but that's fine, because the account will be created properly when the create tx runs in the block
+			// and then this won't return nil. otherwise, we take their fee
+			// Note: ctx.tx.Address == nil if createContract so dereference is okay
+		}
+	}
 
 	if ctx.RunCall {
-		ctx.Deliver(inAcc, outAcc, value)
+		ctx.Deliver(tx, caller, callee)
 	} else {
-		ctx.Check(inAcc, value)
+		// The mempool does not call txs until
+		// the proposer determines the order of txs.
+		// So mempool will skip the actual .Call(),
+		// and only deduct from the caller's balance.
+
+		err = caller.SubtractFromBalance(tx.Amount())
+		if err != nil {
+			return err
+		}
+		ctx.StateWriter.UpdateAccount(caller)
 	}
 
 	return nil
 }
 
-func (ctx *CallContext) Precheck() (*acm.Account, *acm.Account, error) {
-	var outAcc *acm.Account
-	// Validate input
-	inAcc, err := state.GetAccount(ctx.StateWriter, ctx.tx.Input.Address)
-	if err != nil {
-		return nil, nil, err
-	}
-	if inAcc == nil {
-		ctx.Logger.InfoMsg("Cannot find input account",
-			"tx_input", ctx.tx.Input)
-		return nil, nil, payload.ErrTxInvalidAddress
-	}
-
-	err = validateInput(inAcc, ctx.tx.Input)
-	if err != nil {
-		ctx.Logger.InfoMsg("validateInput failed",
-			"tx_input", ctx.tx.Input, structure.ErrorKey, err)
-		return nil, nil, err
-	}
-	if ctx.tx.Input.Amount < ctx.tx.Fee {
-		ctx.Logger.InfoMsg("Sender did not send enough to cover the fee",
-			"tx_input", ctx.tx.Input)
-		return nil, nil, payload.ErrTxInsufficientFunds
-	}
-
-	ctx.Logger.TraceMsg("Incrementing sequence number for CallTx",
-		"tag", "sequence",
-		"account", inAcc.Address(),
-		"old_sequence", inAcc.Sequence(),
-		"new_sequence", inAcc.Sequence()+1)
-
-	inAcc.IncSequence()
-	err = inAcc.SubtractFromBalance(ctx.tx.Fee)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Calling a nil destination is defined as requesting contract creation
-	createContract := ctx.tx.Address == nil
-
-	if createContract {
-		if !util.HasCreateContractPermission(ctx.StateWriter, inAcc) {
-			return nil, nil, fmt.Errorf("account %s does not have CreateContract permission", ctx.tx.Input.Address)
-		}
-	} else {
-		if !util.HasCallPermission(ctx.StateWriter, inAcc) {
-			return nil, nil, fmt.Errorf("account %s does not have Call permission", ctx.tx.Input.Address)
-		}
-		// check if its a native contract
-		if evm.IsRegisteredNativeContract(ctx.tx.Address.Word256()) {
-			return nil, nil, fmt.Errorf("attempt to call a native contract at %s, "+
-				"but native contracts cannot be called using CallTx. Use a "+
-				"contract that calls the native contract or the appropriate tx "+
-				"type (eg. PermissionsTx, NameTx)", ctx.tx.Address)
-		}
-
-		// Output account may be nil if we are still in mempool and contract was created in same block as this tx
-		// but that's fine, because the account will be created properly when the create tx runs in the block
-		// and then this won't return nil. otherwise, we take their fee
-		// Note: ctx.tx.Address == nil iff createContract so dereference is okay
-		outAcc, err = ctx.StateWriter.GetAccount(*ctx.tx.Address)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	err = ctx.StateWriter.UpdateAccount(inAcc)
-	if err != nil {
-		return nil, nil, err
-	}
-	return inAcc, outAcc, nil
-}
-
-func (ctx *CallContext) Check(inAcc *acm.Account, value uint64) error {
-	createContract := ctx.tx.Address == nil
-	// The mempool does not call txs until
-	// the proposer determines the order of txs.
-	// So mempool will skip the actual .Call(),
-	// and only deduct from the caller's balance.
-	err := inAcc.SubtractFromBalance(value)
-	if err != nil {
-		return err
-	}
-	if createContract {
-		// This is done by DeriveNewAccount when runCall == true
-		ctx.Logger.TraceMsg("Incrementing sequence number since creates contract",
-			"tag", "sequence",
-			"account", inAcc.Address(),
-			"old_sequence", inAcc.Sequence(),
-			"new_sequence", inAcc.Sequence()+1)
-		inAcc.IncSequence()
-	}
-	return ctx.StateWriter.UpdateAccount(inAcc)
-}
-
-func (ctx *CallContext) Deliver(inAcc, outAcc *acm.Account, value uint64) error {
-	createContract := ctx.tx.Address == nil
+func (ctx *CallContext) Deliver(tx *payload.CallTx, caller, callee *acm.Account) error {
+	createContract := tx.CreatesContract()
 	// VM call variables
 	var (
-		gas     uint64       = ctx.tx.GasLimit
-		caller  *acm.Account = inAcc
-		callee  *acm.Account = nil // initialized below
-		code    []byte       = nil
-		ret     []byte       = nil
-		txCache              = state.NewCache(ctx.StateWriter, state.Name("TxCache"))
-		params               = evm.Params{
+		gas     uint64 = tx.GasLimit()
+		code    []byte = nil
+		ret     []byte = nil
+		txCache        = state.NewCache(ctx.StateWriter, state.Name("TxCache"))
+		params         = evm.Params{
 			BlockHeight: ctx.Tip.LastBlockHeight(),
 			BlockHash:   binary.LeftPadWord256(ctx.Tip.LastBlockHash()),
 			BlockTime:   ctx.Tip.LastBlockTime().Unix(),
@@ -171,13 +115,13 @@ func (ctx *CallContext) Deliver(inAcc, outAcc *acm.Account, value uint64) error 
 	// get or create callee
 	if createContract {
 		// We already checked for permission
-		callee = evm.DeriveNewAccount(caller, state.GlobalAccountPermissions(ctx.StateWriter), ctx.Logger)
-		code = ctx.tx.Data
+		callee = evm.DeriveNewAccount(caller)
+		code = tx.Data()
 		ctx.Logger.TraceMsg("Creating new contract",
 			"contract_address", callee.Address(),
 			"init_code", code)
 	} else {
-		if outAcc == nil || len(outAcc.Code()) == 0 {
+		if callee == nil || len(callee.Code()) == 0 {
 			// if you call an account that doesn't exist
 			// or an account with no code then we take fees (sorry pal)
 			// NOTE: it's fine to create a contract and call it within one
@@ -185,37 +129,36 @@ func (ctx *CallContext) Deliver(inAcc, outAcc *acm.Account, value uint64) error 
 			// but to create with one contract and call with another
 			// you have to wait a block to avoid a re-ordering attack
 			// that will take your fees
-			if outAcc == nil {
+			if callee == nil {
 				ctx.Logger.InfoMsg("Call to address that does not exist",
-					"caller_address", inAcc.Address(),
-					"callee_address", ctx.tx.Address)
+					"caller_address", tx.Caller(),
+					"callee_address", tx.Callee())
 			} else {
 				ctx.Logger.InfoMsg("Call to address that holds no code",
-					"caller_address", inAcc.Address(),
-					"callee_address", ctx.tx.Address)
+					"caller_address", tx.Caller(),
+					"callee_address", tx.Callee())
 			}
-			ctx.FireCallEvents(nil, payload.ErrTxInvalidAddress)
+			ctx.FireCallEvents(tx, nil, errors.ErrorCodeUnknownAddress)
 			return nil
 		}
-		callee = outAcc
 		code = callee.Code()
 		ctx.Logger.TraceMsg("Calling existing contract",
 			"contract_address", callee.Address(),
-			"input", ctx.tx.Data,
+			"input", tx.Data(),
 			"contract_code", code)
 	}
 	ctx.Logger.Trace.Log("callee", callee.Address().String())
 
 	txCache.UpdateAccount(caller)
 	txCache.UpdateAccount(callee)
-	vmach := evm.NewVM(params, caller.Address(), ctx.txEnv.Tx, ctx.Logger, ctx.VMOptions...)
+	vmach := evm.NewVM(params, caller.Address(), &ctx.txEnv.Tx, ctx.Logger, ctx.VMOptions...)
 	vmach.SetPublisher(ctx.EventPublisher)
 	// NOTE: Call() transfers the value from caller to callee iff call succeeds.
-	ret, exception := vmach.Call(txCache, caller, callee, code, ctx.tx.Data, value, &gas)
-	if exception != nil {
+	ret, err := vmach.Call(txCache, caller, callee, code, tx.Data(), tx.Amount(), &gas)
+	if err != nil {
 		// Failure. Charge the gas fee. The 'value' was otherwise not transferred.
 		ctx.Logger.InfoMsg("Error on execution",
-			structure.ErrorKey, exception)
+			structure.ErrorKey, err)
 	} else {
 		ctx.Logger.TraceMsg("Successful execution")
 		if createContract {
@@ -235,20 +178,18 @@ func (ctx *CallContext) Deliver(inAcc, outAcc *acm.Account, value uint64) error 
 		"caller", caller,
 		"callee", callee,
 		"return", ret,
-		structure.ErrorKey, exception)
-	ctx.FireCallEvents(ret, exception)
+		structure.ErrorKey, err)
+	ctx.FireCallEvents(tx, ret, err)
 	return nil
 }
 
-func (ctx *CallContext) FireCallEvents(ret []byte, err error) {
+func (ctx *CallContext) FireCallEvents(tx *payload.CallTx, ret []byte, err error) {
 	// Fire Events for sender and receiver
 	// a separate event will be fired from vm for each additional call
 	if ctx.EventPublisher != nil {
-		events.PublishAccountInput(ctx.EventPublisher, ctx.Tip.LastBlockHeight(), ctx.tx.Input.Address, ctx.txEnv.Tx,
-			ret, errors.AsCodedError(err))
-		if ctx.tx.Address != nil {
-			events.PublishAccountOutput(ctx.EventPublisher, ctx.Tip.LastBlockHeight(), *ctx.tx.Address, ctx.txEnv.Tx,
-				ret, errors.AsCodedError(err))
+		events.PublishAccountInput(ctx.EventPublisher, ctx.Tip.LastBlockHeight(), tx.Caller(), &ctx.txEnv.Tx, ret, errors.AsCodedError(err))
+		if tx.CreatesContract() {
+			events.PublishAccountOutput(ctx.EventPublisher, ctx.Tip.LastBlockHeight(), tx.Callee(), &ctx.txEnv.Tx, ret, errors.AsCodedError(err))
 		}
 	}
 }

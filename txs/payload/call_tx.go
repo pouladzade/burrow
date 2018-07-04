@@ -1,63 +1,60 @@
 package payload
 
 import (
-	"fmt"
-
-	"github.com/hyperledger/burrow/account/state"
-	"github.com/hyperledger/burrow/binary"
+	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/crypto"
 )
 
 type CallTx struct {
-	Input *TxInput
-	// Pointer since CallTx defines unset 'to' address as inducing account creation
-	Address  *crypto.Address
-	GasLimit uint64
-	Fee      uint64
-	// Signing normalisation needs omitempty
-	Data binary.HexBytes `json:",omitempty"`
+	data callData
 }
 
-func NewCallTx(st state.AccountGetter, from crypto.PublicKey, to *crypto.Address, data []byte,
-	amt, gasLimit, fee uint64) (*CallTx, error) {
-
-	addr := from.Address()
-	acc, err := st.GetAccount(addr)
-	if err != nil {
-		return nil, err
-	}
-	if acc == nil {
-		return nil, fmt.Errorf("invalid address %s from pubkey %s", addr, from)
-	}
-
-	sequence := acc.Sequence() + 1
-	return NewCallTxWithSequence(from, to, data, amt, gasLimit, fee, sequence), nil
+type callData struct {
+	Caller   TxInput  `json:"caller"`
+	Callee   TxOutput `json:"callee,omitempty"`
+	GasLimit uint64   `json:"gas_limit"`
+	Data     []byte   `json:"data,omitempty"`
 }
 
-func NewCallTxWithSequence(from crypto.PublicKey, to *crypto.Address, data []byte,
-	amt, gasLimit, fee, sequence uint64) *CallTx {
-	input := &TxInput{
-		Address:  from.Address(),
-		Amount:   amt,
-		Sequence: sequence,
-	}
-
+func NewCallTx(caller, callee crypto.Address, sequence uint64, data []byte, gasLimit, amount, fee uint64) (*CallTx, error) {
 	return &CallTx{
-		Input:    input,
-		Address:  to,
-		GasLimit: gasLimit,
-		Fee:      fee,
-		Data:     data,
+		data: callData{
+			Caller: TxInput{
+				Address:  caller,
+				Sequence: sequence,
+				Amount:   amount + fee,
+			},
+			Callee: TxOutput{
+				Address: callee,
+				Amount:  amount,
+			},
+			GasLimit: gasLimit,
+			Data:     data,
+		},
+	}, nil
+}
+
+func (tx *CallTx) Type() Type             { return TypeCall }
+func (tx *CallTx) Caller() crypto.Address { return tx.data.Caller.Address }
+func (tx *CallTx) Callee() crypto.Address { return tx.data.Callee.Address }
+func (tx *CallTx) Amount() uint64         { return tx.data.Callee.Amount }
+func (tx *CallTx) Sequence() uint64       { return tx.data.Caller.Sequence }
+func (tx *CallTx) GasLimit() uint64       { return tx.data.GasLimit }
+func (tx *CallTx) Fee() uint64            { return tx.data.Caller.Amount - tx.data.Callee.Amount }
+func (tx *CallTx) Data() []byte           { return tx.data.Data }
+
+func (tx *CallTx) Inputs() []TxInput {
+	return []TxInput{tx.data.Caller}
+}
+
+func (tx *CallTx) Outputs() []TxOutput {
+	return []TxOutput{tx.data.Callee}
+}
+
+func (tx *CallTx) CreatesContract() bool {
+	if tx.data.Callee.Address == acm.GlobalAddress {
+		return true
 	}
-}
 
-func (tx *CallTx) Type() Type {
-	return TypeCall
-}
-func (tx *CallTx) GetInputs() []*TxInput {
-	return []*TxInput{tx.Input}
-}
-
-func (tx *CallTx) String() string {
-	return fmt.Sprintf("CallTx{%v -> %s: %X}", tx.Input, tx.Address, tx.Data)
+	return false
 }

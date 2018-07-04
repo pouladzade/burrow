@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/hyperledger/burrow/crypto"
+	"github.com/hyperledger/burrow/errors"
 )
 
 type TxOutput struct {
@@ -13,14 +14,11 @@ type TxOutput struct {
 
 func (txOut *TxOutput) ValidateBasic() error {
 	if len(txOut.Address) != 20 {
-		return ErrTxInvalidAddress
-	}
-	if txOut.Amount == 0 {
-		return ErrTxInvalidAmount
+		return e.Error(e.ErrTxInvalidAddress)
 	}
 	return nil
 }
 
 func (txOut *TxOutput) String() string {
-	return fmt.Sprintf("TxOutput{%s,%v}", txOut.Address, txOut.Amount)
+	return fmt.Sprintf("TxOutput{%s, Amount:%v}", txOut.Address, txOut.Amount)
 }

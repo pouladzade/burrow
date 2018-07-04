@@ -181,10 +181,8 @@ func privateAccount(privateAccount *pbtransactor.PrivateAccount) (acm.PrivateAcc
 	if err != nil {
 		return nil, err
 	}
-	publicKey := privateKey.GetPublicKey()
+
 	return acm.ConcretePrivateAccount{
-		Address:    publicKey.Address(),
 		PrivateKey: privateKey,
-		PublicKey:  publicKey,
 	}.PrivateAccount(), nil
 }

@@ -23,7 +23,7 @@ import (
 	"github.com/hyperledger/burrow/account/state"
 	. "github.com/hyperledger/burrow/binary"
 	"github.com/hyperledger/burrow/crypto"
-	"github.com/hyperledger/burrow/execution/errors"
+	"github.com/hyperledger/burrow/errors"
 	"github.com/hyperledger/burrow/execution/evm/abi"
 	"github.com/hyperledger/burrow/execution/evm/sha3"
 	"github.com/hyperledger/burrow/logging"
@@ -175,7 +175,7 @@ func (contract *SNativeContractDescription) Dispatch(state state.ReaderWriter, c
 	logger = logger.With(structure.ScopeKey, "Dispatch", "contract_name", contract.Name)
 
 	if len(args) < abi.FunctionSelectorLength {
-		return nil, errors.ErrorCodef(errors.ErrorCodeNativeFunction,
+		return nil, e.Errorf(e.ErrVMNativeFunction,
 			"SNatives dispatch requires a 4-byte function identifier but arguments are only %v bytes long",
 			len(args))
 	}
@@ -193,12 +193,12 @@ func (contract *SNativeContractDescription) Dispatch(state state.ReaderWriter, c
 
 	// check if we have permission to call this function
 	if !util.HasPermissions(state, caller, function.Permissions) {
-		return nil, errors.LacksSNativePermission{caller.Address(), function.Name}
+		return nil, e.Errorf(e.ErrPermDenied, "account %s does not have SNative function call permission: %s", caller.Address(), function.Name)
 	}
 
 	// ensure there are enough arguments
 	if len(remainingArgs) != function.NArgs()*Word256Length {
-		return nil, errors.ErrorCodef(errors.ErrorCodeNativeFunction, "%s() takes %d arguments but got %d (with %d bytes unconsumed - should be 0)",
+		return nil, e.Errorf(e.ErrVMNativeFunction, "%s() takes %d arguments but got %d (with %d bytes unconsumed - should be 0)",
 			function.Name, function.NArgs(), len(remainingArgs)/Word256Length, len(remainingArgs)%Word256Length)
 	}
 
@@ -215,11 +215,11 @@ func (contract *SNativeContractDescription) Address() (address crypto.Address) {
 }
 
 // Get function by calling identifier FunctionSelector
-func (contract *SNativeContractDescription) FunctionByID(id abi.FunctionSelector) (*SNativeFunctionDescription, errors.CodedError) {
+func (contract *SNativeContractDescription) FunctionByID(id abi.FunctionSelector) (*SNativeFunctionDescription, error) {
 	f, ok := contract.functionsByID[id]
 	if !ok {
 		return nil,
-			errors.ErrorCodef(errors.ErrorCodeNativeFunction, "unknown SNative function with ID %x", id)
+			e.Errorf(e.ErrVMNativeFunction, "unknown SNative function with ID %x", id)
 	}
 	return f, nil
 }
@@ -299,7 +299,7 @@ func hasPermissions(state state.ReaderWriter, caller *acm.Account, args []byte, 
 	logger.Trace.Log("function", "hasPermissions",
 		"address", address.String(),
 		"account_permissions", acc.Permissions().String(),
-		"prmissions", permissions.String(),
+		"permissions", permissions.String(),
 		"has_permission", hasPermissions)
 	return LeftPadWord256([]byte{permInt}).Bytes(), nil
 }

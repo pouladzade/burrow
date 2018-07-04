@@ -15,22 +15,15 @@
 package txs
 
 import (
-	"encoding/json"
-	"runtime/debug"
-	"testing"
-
 	acm "github.com/hyperledger/burrow/account"
 	"github.com/hyperledger/burrow/crypto"
-	"github.com/hyperledger/burrow/permission"
-	"github.com/hyperledger/burrow/txs/payload"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var chainID = "myChainID"
 
 var privateAccounts = make(map[crypto.Address]acm.AddressableSigner)
 
+/*
 func makePrivateAccount(str string) acm.PrivateAccount {
 	acc := acm.GeneratePrivateAccountFromSecret(str)
 	privateAccounts[acc.Address()] = acc
@@ -201,3 +194,5 @@ func testTxSignVerify(t *testing.T, tx payload.Payload) {
 	require.NoError(t, txEnv.Sign(signers...), "Error signing tx: %s", debug.Stack())
 	require.NoError(t, txEnv.Verify(nil), "Error verifying tx: %s", debug.Stack())
 }
+
+*/

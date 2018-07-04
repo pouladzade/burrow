@@ -14,19 +14,7 @@
 
 package v0
 
-import (
-	"encoding/json"
-	"fmt"
-	"testing"
-
-	acm "github.com/hyperledger/burrow/account"
-	"github.com/hyperledger/burrow/rpc"
-	"github.com/hyperledger/burrow/txs"
-	"github.com/hyperledger/burrow/txs/payload"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-)
-
+/*
 var txEnvelopeString = `{"Signatories":[{"Address":"83207817DC3814B96F57EFF925F467E07CAA9138","PublicKey":{"CurveType":"ed25519",` +
 	`"PublicKey":"34D26579DBB456693E540672CF922F52DDE0D6532E35BF06BE013A7C532F20E0"},` +
 	`"Signature":"5042F208824AA5AF8E03B2F11FB8CFCDDAE4F889B2F720714627395406E00D7740B2DB5B5F93BD6C13DED9B7C1FD5FB0DB4ECA31E6DA0B81033A72922076E90C"}],` +
@@ -72,3 +60,4 @@ func TestGenTxEnvelope(t *testing.T) {
 		fmt.Println(string(bs))
 	}
 }
+*/

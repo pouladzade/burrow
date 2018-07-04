@@ -8,7 +8,6 @@ import (
 	"github.com/hyperledger/burrow/account/state"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/keys"
-	"github.com/hyperledger/burrow/permission"
 	burrow_sync "github.com/hyperledger/burrow/sync"
 )
 
@@ -49,7 +48,7 @@ func (accs *Accounts) SigningAccount(address crypto.Address, signer crypto.Signe
 		if err != nil {
 			return nil, err
 		}
-		account = acm.NewAccount(pubKey, permission.ZeroAccountPermissions)
+		account = acm.NewAccount(pubKey.Address())
 	}
 
 	return &SigningAccount{
@@ -113,4 +112,8 @@ func (ssa *SequentialSigningAccount) Lock() (*SigningAccount, UnlockFunc, error)
 		return nil, nil, err
 	}
 	return account, ssa.accountLocker.Unlock, err
+}
+
+func (sa *SigningAccount) PublicKey() crypto.PublicKey {
+	return crypto.PublicKey{}
 }

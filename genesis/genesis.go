@@ -89,7 +89,8 @@ func (genesisDoc *GenesisDoc) ChainID() string {
 func (genesisDoc *GenesisDoc) Accounts() []*acm.Account {
 	accounts := make([]*acm.Account, 0, len(genesisDoc.GenAccounts))
 	for _, genAccount := range genesisDoc.GenAccounts {
-		account := acm.NewAccount(genAccount.PublicKey, genAccount.Permissions)
+		account := acm.NewAccount(genAccount.Address)
+		account.SetPermissions(genAccount.Permissions)
 		account.AddToBalance(genAccount.Amount)
 
 		accounts = append(accounts, account)
@@ -112,10 +113,10 @@ func (genesisDoc *GenesisDoc) names() map[crypto.Address]string {
 func (genesisDoc *GenesisDoc) Validators() []acm.Validator {
 	validators := make([]acm.Validator, 0, len(genesisDoc.GenValidators))
 	for _, genValidator := range genesisDoc.GenValidators {
-		account := acm.NewAccount(genValidator.PublicKey, permission.ZeroAccountPermissions)
+		account := acm.NewAccount(genValidator.Address)
 		account.AddToBalance(genValidator.Stake)
 
-		validator := acm.AsValidator(account)
+		validator := acm.AsValidator(account, genValidator.PublicKey)
 
 		validators = append(validators, validator)
 	}
@@ -148,7 +149,6 @@ func GenesisDocFromJSON(jsonBlob []byte) (*GenesisDoc, error) {
 
 func makeGenesisAccount(account *acm.Account) genAccount {
 	return genAccount{
-		PublicKey:   account.PublicKey(),
 		Address:     account.Address(),
 		Amount:      account.Balance(),
 		Permissions: account.Permissions(),

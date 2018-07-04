@@ -75,7 +75,7 @@ func (conf *BurrowConfig) Kernel(ctx context.Context) (*core.Kernel, error) {
 	if err != nil {
 		return nil, err
 	}
-	privValidator := validator.NewPrivValidatorMemory(val, signer)
+	privValidator := validator.NewPrivValidatorMemory(val.PublicKey(), signer)
 
 	var exeOptions []execution.ExecutionOption
 	if conf.Execution != nil {
